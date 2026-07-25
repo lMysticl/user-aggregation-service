@@ -20,19 +20,17 @@ public class OpenApiConfig {
                 .description("Local Development Server");
 
         Contact contact = new Contact()
-                .name("Development Team")
-                .email("dev@example.com")
-                .url("https://github.com/yourusername/Aggregation-Service");
+                .name("Project repository")
+                .url("https://github.com/lMysticl/Aggregation_Service");
 
         License license = new License()
-                .name("MIT License")
-                .url("https://opensource.org/licenses/MIT");
+                .name("All rights reserved")
+                .url("https://github.com/lMysticl/Aggregation_Service/blob/main/LICENSE");
 
         Info info = new Info()
                 .title("User Aggregation API")
                 .version("1.0.0")
                 .description("Service for aggregating user data from multiple databases (PostgreSQL and MongoDB)")
-                .termsOfService("http://example.com/terms/")
                 .contact(contact)
                 .license(license);
 

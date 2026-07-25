@@ -1,32 +1,24 @@
-app:
-  datasources:
-    sources:
-      - name: postgres-primary
-        type: jdbc
-        url: jdbc:postgresql://postgres:5432/users_db
-        username: postgres
-        password: root
-        driver-class-name: org.postgresql.Driver
-        primary: true
-        priority: 100
-        max-pool-size: 10
-        min-pool-size: 2
-        connection-timeout: 30000
-        idle-timeout: 600000
-        validation-query: SELECT 1
-        properties:
-          hibernate.hbm2ddl.auto: update
-          hibernate.show_sql: true
-          hibernate.format_sql: true
+data-sources:
+  sources:
+    - name: postgres-primary
+      type: jdbc
+      strategy: postgres
+      url: ${AGGREGATION_PRIMARY_JDBC_URL}
+      table: users
+      username: ${AGGREGATION_PRIMARY_JDBC_USERNAME}
+      password: ${AGGREGATION_PRIMARY_JDBC_PASSWORD}
+      primary: true
+      priority: 100
+      mapping:
+        id: id
+        username: username
+        name: first_name
+        surname: last_name
 
-      - name: mongodb-secondary
-        type: mongodb
-        url: mongodb://mongodb:27017/users_db
-        priority: 90
-        properties:
-          database: users_db
-          auto-index-creation: true
-          authentication-database: admin
+    - name: mongodb-secondary
+      type: mongodb
+      url: ${AGGREGATION_MONGODB_URI}
+      priority: 90
 
 spring:
   jpa:

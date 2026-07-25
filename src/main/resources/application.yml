@@ -20,11 +20,11 @@ data-sources:
   sources:
     - name: data-base-1
       type: jdbc
-      strategy: h2
-      url: jdbc:h2:mem:db1;DB_CLOSE_DELAY=-1
+      strategy: ${AGGREGATION_PRIMARY_JDBC_STRATEGY:h2}
+      url: ${AGGREGATION_PRIMARY_JDBC_URL:jdbc:h2:mem:db1;DB_CLOSE_DELAY=-1}
       table: users
-      username: sa
-      password: 
+      username: ${AGGREGATION_PRIMARY_JDBC_USERNAME:sa}
+      password: ${AGGREGATION_PRIMARY_JDBC_PASSWORD:}
       primary: true
       priority: 100
       mapping:
@@ -35,11 +35,11 @@ data-sources:
         
     - name: data-base-2
       type: jdbc
-      strategy: h2
-      url: jdbc:h2:mem:db2;DB_CLOSE_DELAY=-1
+      strategy: ${AGGREGATION_SECONDARY_JDBC_STRATEGY:h2}
+      url: ${AGGREGATION_SECONDARY_JDBC_URL:jdbc:h2:mem:db2;DB_CLOSE_DELAY=-1}
       table: users
-      username: sa
-      password: 
+      username: ${AGGREGATION_SECONDARY_JDBC_USERNAME:sa}
+      password: ${AGGREGATION_SECONDARY_JDBC_PASSWORD:}
       priority: 90
       mapping:
         id: id
@@ -49,7 +49,7 @@ data-sources:
 
     - name: mongodb-users
       type: mongodb
-      url: mongodb://localhost:27017/users
+      url: ${AGGREGATION_MONGODB_URI:mongodb://localhost:27017/users}
       priority: 80
 
 management:
