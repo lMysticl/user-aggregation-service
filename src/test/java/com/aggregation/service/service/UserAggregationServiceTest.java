@@ -1,9 +1,11 @@
 package com.aggregation.service.service;
 
 import com.aggregation.service.config.properties.AggregationProperties;
+import com.aggregation.service.domain.AggregatedUser;
+import com.aggregation.service.domain.UserSource;
 import com.aggregation.service.exception.SourceUnavailableException;
-import com.aggregation.service.model.MongoUser;
-import com.aggregation.service.model.User;
+import com.aggregation.service.persistence.jpa.PostgresUserEntity;
+import com.aggregation.service.persistence.mongo.MongoUserDocument;
 import com.aggregation.service.repository.jpa.PostgresUserRepository;
 import com.aggregation.service.repository.mongo.MongoUserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -34,8 +36,8 @@ class UserAggregationServiceTest {
 
     private ExecutorService executor;
     private UserAggregationService userAggregationService;
-    private User postgresUser;
-    private MongoUser mongoUser;
+    private PostgresUserEntity postgresUser;
+    private MongoUserDocument mongoUser;
 
     @BeforeEach
     void setUp() {
@@ -49,14 +51,14 @@ class UserAggregationServiceTest {
                 properties
         );
 
-        postgresUser = User.builder()
+        postgresUser = PostgresUserEntity.builder()
                 .id("7d6d939c-74c2-45a1-924c-8ba608a7b1cf")
                 .username("user-1")
                 .name("User")
                 .surname("Userenko")
                 .build();
 
-        mongoUser = MongoUser.builder()
+        mongoUser = MongoUserDocument.builder()
                 .id("7d6d939c-74c2-45a1-924c-8ba608a7b3")
                 .username("user-2")
                 .firstName("Testuser")
@@ -74,11 +76,20 @@ class UserAggregationServiceTest {
         when(postgresUserRepository.findAll()).thenReturn(List.of(postgresUser));
         when(mongoUserRepository.findAll()).thenReturn(List.of(mongoUser));
 
-        List<User> result = userAggregationService.searchUsers(null, null);
+        List<AggregatedUser> result = userAggregationService.searchUsers(null, null);
 
         assertThat(result)
-                .extracting(User::getUsername)
+                .extracting(AggregatedUser::username)
                 .containsExactly("user-1", "user-2");
+        assertThat(result)
+                .extracting(AggregatedUser::source)
+                .containsExactly(UserSource.POSTGRESQL, UserSource.MONGODB);
+        assertThat(result)
+                .extracting(AggregatedUser::sourceId)
+                .containsExactly(
+                        "7d6d939c-74c2-45a1-924c-8ba608a7b1cf",
+                        "7d6d939c-74c2-45a1-924c-8ba608a7b3"
+                );
     }
 
     @Test
@@ -88,7 +99,7 @@ class UserAggregationServiceTest {
         when(mongoUserRepository.findByUsernameContainingIgnoreCase("user"))
                 .thenReturn(List.of(mongoUser));
 
-        List<User> result = userAggregationService.searchUsers(" user ", "ignored");
+        List<AggregatedUser> result = userAggregationService.searchUsers(" user ", "ignored");
 
         assertThat(result).hasSize(2);
     }
@@ -102,10 +113,10 @@ class UserAggregationServiceTest {
                 .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase("User", "User"))
                 .thenReturn(List.of());
 
-        List<User> result = userAggregationService.searchUsers(null, "User");
+        List<AggregatedUser> result = userAggregationService.searchUsers(null, "User");
 
         assertThat(result)
-                .extracting(User::getUsername)
+                .extracting(AggregatedUser::username)
                 .containsExactly("user-1");
     }
 

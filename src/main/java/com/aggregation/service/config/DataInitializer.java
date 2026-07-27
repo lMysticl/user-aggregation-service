@@ -1,7 +1,7 @@
 package com.aggregation.service.config;
 
-import com.aggregation.service.model.MongoUser;
-import com.aggregation.service.model.User;
+import com.aggregation.service.persistence.jpa.PostgresUserEntity;
+import com.aggregation.service.persistence.mongo.MongoUserDocument;
 import com.aggregation.service.repository.jpa.PostgresUserRepository;
 import com.aggregation.service.repository.mongo.MongoUserRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -23,8 +23,8 @@ public class DataInitializer {
             MongoUserRepository mongoRepo) {
         return args -> {
             if (postgresRepo.count() == 0) {
-                List<User> postgresUsers = List.of(
-                        User.builder()
+                List<PostgresUserEntity> postgresUsers = List.of(
+                        PostgresUserEntity.builder()
                                 .username("user-1")
                                 .name("User")
                                 .surname("Userenko")
@@ -35,8 +35,8 @@ public class DataInitializer {
             }
 
             if (mongoRepo.count() == 0) {
-                List<MongoUser> mongoUsers = List.of(
-                        MongoUser.builder()
+                List<MongoUserDocument> mongoUsers = List.of(
+                        MongoUserDocument.builder()
                                 .id("7d6d939c-74c2-45a1-924c-8ba608a7b3")
                                 .username("user-2")
                                 .firstName("Testuser")

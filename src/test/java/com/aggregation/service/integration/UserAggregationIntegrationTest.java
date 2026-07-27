@@ -1,7 +1,9 @@
 package com.aggregation.service.integration;
 
-import com.aggregation.service.model.MongoUser;
-import com.aggregation.service.model.User;
+import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.domain.AggregatedUser;
+import com.aggregation.service.persistence.jpa.PostgresUserEntity;
+import com.aggregation.service.persistence.mongo.MongoUserDocument;
 import com.aggregation.service.repository.jpa.PostgresUserRepository;
 import com.aggregation.service.repository.mongo.MongoUserRepository;
 import com.aggregation.service.service.UserAggregationService;
@@ -44,13 +46,13 @@ class UserAggregationIntegrationTest {
                 .filter(Objects::nonNull)
                 .forEach(Cache::clear);
 
-        postgresUserRepository.save(User.builder()
+        postgresUserRepository.save(PostgresUserEntity.builder()
                 .username("testUser")
                 .name("Test")
                 .surname("User")
                 .build());
 
-        mongoUserRepository.save(MongoUser.builder()
+        mongoUserRepository.save(MongoUserDocument.builder()
                 .id("mongo-user")
                 .username("mongoUser")
                 .firstName("Mongo")
@@ -66,10 +68,10 @@ class UserAggregationIntegrationTest {
 
     @Test
     void aggregatesUsersFromPostgresAndMongo() {
-        List<User> users = userAggregationService.searchUsers(null, null);
+        List<AggregatedUser> users = userAggregationService.searchUsers(null, null);
 
         assertThat(users)
-                .extracting(User::getUsername)
+                .extracting(AggregatedUser::username)
                 .containsExactly("testUser", "mongoUser");
     }
 
@@ -77,7 +79,7 @@ class UserAggregationIntegrationTest {
     void cachesReadsAndEvictsAfterCreate() {
         assertThat(userAggregationService.searchUsers(null, null)).hasSize(2);
 
-        mongoUserRepository.save(MongoUser.builder()
+        mongoUserRepository.save(MongoUserDocument.builder()
                 .id("cached-mongo-user")
                 .username("cachedMongoUser")
                 .firstName("Cached")
@@ -88,15 +90,15 @@ class UserAggregationIntegrationTest {
                 .as("the second identical read is served from Caffeine")
                 .hasSize(2);
 
-        userAggregationService.createUser(User.builder()
-                .username("createdUser")
-                .name("Created")
-                .surname("User")
-                .build());
+        userAggregationService.createUser(new CreateUserCommand(
+                "createdUser",
+                "Created",
+                "User"
+        ));
 
         assertThat(userAggregationService.searchUsers(null, null))
                 .as("a write evicts all cached search variants")
-                .extracting(User::getUsername)
+                .extracting(AggregatedUser::username)
                 .containsExactlyInAnyOrder(
                         "testUser",
                         "createdUser",
@@ -107,13 +109,13 @@ class UserAggregationIntegrationTest {
 
     @Test
     void treatsSearchTextAsLiteralTextInsteadOfMongoRegex() {
-        mongoUserRepository.save(MongoUser.builder()
+        mongoUserRepository.save(MongoUserDocument.builder()
                 .id("literal-dot")
                 .username("literal.dot")
                 .firstName("Literal")
                 .lastName("Dot")
                 .build());
-        mongoUserRepository.save(MongoUser.builder()
+        mongoUserRepository.save(MongoUserDocument.builder()
                 .id("regex-lookalike")
                 .username("literalXdot")
                 .firstName("Regex")
@@ -121,7 +123,7 @@ class UserAggregationIntegrationTest {
                 .build());
 
         assertThat(userAggregationService.searchUsers(".", null))
-                .extracting(User::getUsername)
+                .extracting(AggregatedUser::username)
                 .containsExactly("literal.dot");
     }
 }
