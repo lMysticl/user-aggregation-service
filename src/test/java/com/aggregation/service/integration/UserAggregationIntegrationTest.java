@@ -2,11 +2,13 @@ package com.aggregation.service.integration;
 
 import com.aggregation.service.adapter.persistence.mongo.MongoUserDocument;
 import com.aggregation.service.adapter.persistence.mongo.MongoUserRepository;
+import com.aggregation.service.adapter.metrics.MicrometerUserSourceMetrics;
 import com.aggregation.service.adapter.persistence.postgres.PostgresUserEntity;
 import com.aggregation.service.adapter.persistence.postgres.PostgresUserRepository;
 import com.aggregation.service.application.CreateUserCommand;
 import com.aggregation.service.application.UserAggregationService;
 import com.aggregation.service.domain.AggregatedUser;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,9 @@ class UserAggregationIntegrationTest {
 
     @Autowired
     private CacheManager cacheManager;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
@@ -125,5 +130,21 @@ class UserAggregationIntegrationTest {
         assertThat(userAggregationService.searchUsers(".", null))
                 .extracting(AggregatedUser::username)
                 .containsExactly("literal.dot");
+    }
+
+    @Test
+    void exposesOneSuccessfulTimerForEachConfiguredSource() {
+        userAggregationService.searchUsers(null, null);
+
+        assertThat(meterRegistry.find(MicrometerUserSourceMetrics.QUERY_METRIC)
+                .tags("source", "postgresql", "outcome", "success")
+                .timer())
+                .isNotNull()
+                .satisfies(timer -> assertThat(timer.count()).isPositive());
+        assertThat(meterRegistry.find(MicrometerUserSourceMetrics.QUERY_METRIC)
+                .tags("source", "mongodb", "outcome", "success")
+                .timer())
+                .isNotNull()
+                .satisfies(timer -> assertThat(timer.count()).isPositive());
     }
 }

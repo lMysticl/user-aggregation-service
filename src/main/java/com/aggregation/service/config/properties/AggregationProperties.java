@@ -1,6 +1,7 @@
 package com.aggregation.service.config.properties;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -21,6 +22,14 @@ public class AggregationProperties {
 
     @Valid
     private ExecutorProperties executor = new ExecutorProperties();
+
+    @AssertTrue(message = "query-timeout must be between 1ms and 2147483647ms")
+    public boolean isQueryTimeoutValid() {
+        return queryTimeout != null
+                && !queryTimeout.isZero()
+                && !queryTimeout.isNegative()
+                && queryTimeout.toMillis() <= Integer.MAX_VALUE;
+    }
 
     @Getter
     @Setter

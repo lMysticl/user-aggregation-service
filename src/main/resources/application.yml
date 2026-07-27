@@ -5,6 +5,8 @@ spring:
     url: ${AGGREGATION_PRIMARY_JDBC_URL:jdbc:h2:mem:users;DB_CLOSE_DELAY=-1}
     username: ${AGGREGATION_PRIMARY_JDBC_USERNAME:sa}
     password: ${AGGREGATION_PRIMARY_JDBC_PASSWORD:}
+    hikari:
+      connection-timeout: ${AGGREGATION_CONNECTION_TIMEOUT_MS:2000}
   data:
     mongodb:
       uri: ${AGGREGATION_MONGODB_URI:mongodb://localhost:27017/users}

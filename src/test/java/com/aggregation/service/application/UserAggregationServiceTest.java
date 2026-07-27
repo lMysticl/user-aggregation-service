@@ -1,6 +1,7 @@
 package com.aggregation.service.application;
 
 import com.aggregation.service.application.port.UserReadSource;
+import com.aggregation.service.application.port.UserSourceMetrics;
 import com.aggregation.service.application.port.UserWriter;
 import com.aggregation.service.config.properties.AggregationProperties;
 import com.aggregation.service.domain.AggregatedUser;
@@ -18,7 +19,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +56,7 @@ class UserAggregationServiceTest {
         userAggregationService = new UserAggregationService(
                 List.of(mongoSource, postgresSource),
                 userWriter,
+                UserSourceMetrics.noop(),
                 executor,
                 properties
         );
@@ -154,6 +159,7 @@ class UserAggregationServiceTest {
         UserAggregationService shortTimeoutService = new UserAggregationService(
                 List.of(postgresSource, mongoSource),
                 userWriter,
+                UserSourceMetrics.noop(),
                 executor,
                 properties
         );
@@ -170,11 +176,51 @@ class UserAggregationServiceTest {
     }
 
     @Test
+    void workerBecomesReusableAfterTheTimedOutSourceCallFinishes()
+            throws InterruptedException {
+        ExecutorService singleWorker = Executors.newSingleThreadExecutor();
+        try {
+            AggregationProperties properties = new AggregationProperties();
+            properties.setQueryTimeout(Duration.ofMillis(25));
+            UserAggregationService singleSourceService = new UserAggregationService(
+                    List.of(postgresSource),
+                    userWriter,
+                    UserSourceMetrics.noop(),
+                    singleWorker,
+                    properties
+            );
+            UserSearchCriteria criteria = new UserSearchCriteria(null, null);
+            AtomicInteger invocation = new AtomicInteger();
+            CountDownLatch firstCallFinished = new CountDownLatch(1);
+            when(postgresSource.search(criteria, 100)).thenAnswer(ignored -> {
+                if (invocation.incrementAndGet() == 1) {
+                    try {
+                        Thread.sleep(75);
+                    } finally {
+                        firstCallFinished.countDown();
+                    }
+                }
+                return List.of(postgresUser);
+            });
+
+            assertThatThrownBy(() -> singleSourceService.searchUsers(null, null))
+                    .isInstanceOf(SourceUnavailableException.class)
+                    .hasMessageContaining("PostgreSQL");
+            assertThat(firstCallFinished.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(singleSourceService.searchUsers(null, null))
+                    .containsExactly(postgresUser);
+        } finally {
+            singleWorker.shutdownNow();
+        }
+    }
+
+    @Test
     void searchUsersFailsWhenAggregationExecutorIsSaturated() {
         AggregationProperties properties = new AggregationProperties();
         UserAggregationService saturatedService = new UserAggregationService(
                 List.of(postgresSource, mongoSource),
                 userWriter,
+                UserSourceMetrics.noop(),
                 task -> {
                     throw new RejectedExecutionException("queue full");
                 },
