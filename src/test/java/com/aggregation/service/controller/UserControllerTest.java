@@ -1,7 +1,9 @@
 package com.aggregation.service.controller;
 
+import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.domain.AggregatedUser;
+import com.aggregation.service.domain.UserSource;
 import com.aggregation.service.exception.SourceUnavailableException;
-import com.aggregation.service.model.User;
 import com.aggregation.service.service.UserAggregationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +14,8 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -50,12 +54,14 @@ class UserControllerTest {
 
     @Test
     void createUserReturnsCreatedForValidRequest() throws Exception {
-        when(userAggregationService.createUser(any(User.class)))
-                .thenAnswer(invocation -> {
-                    User user = invocation.getArgument(0);
-                    user.setId("123e4567-e89b-12d3-a456-426614174000");
-                    return user;
-                });
+        when(userAggregationService.createUser(any(CreateUserCommand.class)))
+                .thenReturn(new AggregatedUser(
+                        UserSource.POSTGRESQL,
+                        "123e4567-e89b-12d3-a456-426614174000",
+                        "johndoe",
+                        "John",
+                        "Doe"
+                ));
 
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -76,13 +82,35 @@ class UserControllerTest {
     }
 
     @Test
+    void searchUsersPreservesTheV1JsonContract() throws Exception {
+        when(userAggregationService.searchUsers(null, null))
+                .thenReturn(List.of(new AggregatedUser(
+                        UserSource.MONGODB,
+                        "mongo-1",
+                        "johndoe",
+                        "John",
+                        "Doe"
+                )));
+
+        mockMvc.perform(get("/api/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("mongo-1"))
+                .andExpect(jsonPath("$[0].username").value("johndoe"))
+                .andExpect(jsonPath("$[0].name").value("John"))
+                .andExpect(jsonPath("$[0].surname").value("Doe"))
+                .andExpect(jsonPath("$[0].source").doesNotExist())
+                .andExpect(jsonPath("$[0].sourceId").doesNotExist());
+    }
+
+    @Test
     void createdUserLocationCanBeRetrieved() throws Exception {
-        User user = User.builder()
-                .id("123e4567-e89b-12d3-a456-426614174000")
-                .username("johndoe")
-                .name("John")
-                .surname("Doe")
-                .build();
+        AggregatedUser user = new AggregatedUser(
+                UserSource.POSTGRESQL,
+                "123e4567-e89b-12d3-a456-426614174000",
+                "johndoe",
+                "John",
+                "Doe"
+        );
         when(userAggregationService.getUser("123e4567-e89b-12d3-a456-426614174000"))
                 .thenReturn(user);
 

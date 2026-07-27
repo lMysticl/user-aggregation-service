@@ -1,8 +1,10 @@
 package com.aggregation.service.controller;
 
+import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.dto.CreateUserRequest;
+import com.aggregation.service.dto.UserResponse;
 import com.aggregation.service.model.Error;
-import com.aggregation.service.model.User;
 import com.aggregation.service.service.UserAggregationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,7 +47,7 @@ public class UserController {
             description = "Successfully retrieved users",
             content = @Content(
                 mediaType = MediaType.APPLICATION_JSON_VALUE,
-                array = @ArraySchema(schema = @Schema(implementation = User.class)),
+                array = @ArraySchema(schema = @Schema(implementation = UserResponse.class)),
                 examples = @ExampleObject(
                     value = """
                         [{
@@ -67,7 +69,7 @@ public class UserController {
             )
         )
     })
-    public ResponseEntity<List<User>> getUsers(
+    public ResponseEntity<List<UserResponse>> getUsers(
             @Parameter(
                 name = "username",
                 description = "Filter users by username (case-insensitive, partial match)",
@@ -82,7 +84,11 @@ public class UserController {
                 in = ParameterIn.QUERY
             )
             @RequestParam(required = false) String name) {
-        return ResponseEntity.ok(userAggregationService.searchUsers(username, name));
+        List<UserResponse> users = userAggregationService.searchUsers(username, name)
+                .stream()
+                .map(UserResponse::from)
+                .toList();
+        return ResponseEntity.ok(users);
     }
 
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -102,10 +108,10 @@ public class UserController {
             )
         )
     })
-    public ResponseEntity<User> getUser(
+    public ResponseEntity<UserResponse> getUser(
             @Parameter(description = "Relational-store user ID", required = true)
             @PathVariable String id) {
-        return ResponseEntity.ok(userAggregationService.getUser(id));
+        return ResponseEntity.ok(UserResponse.from(userAggregationService.getUser(id)));
     }
 
     @PostMapping(
@@ -126,7 +132,7 @@ public class UserController {
             description = "User successfully created",
             content = @Content(
                 mediaType = MediaType.APPLICATION_JSON_VALUE,
-                schema = @Schema(implementation = User.class),
+                schema = @Schema(implementation = UserResponse.class),
                 examples = @ExampleObject(
                     value = """
                         {
@@ -164,7 +170,7 @@ public class UserController {
             )
         )
     })
-    public ResponseEntity<User> createUser(
+    public ResponseEntity<UserResponse> createUser(
             @Parameter(
                 description = "User data to create",
                 required = true,
@@ -183,14 +189,15 @@ public class UserController {
                 )
             )
             @Valid @RequestBody CreateUserRequest request) {
-        User user = User.builder()
-                .username(request.username())
-                .name(request.name())
-                .surname(request.surname())
-                .build();
-        User createdUser = userAggregationService.createUser(user);
+        CreateUserCommand command = new CreateUserCommand(
+                request.username(),
+                request.name(),
+                request.surname()
+        );
+        AggregatedUser createdUser = userAggregationService.createUser(command);
+        UserResponse response = UserResponse.from(createdUser);
         return ResponseEntity
-                .created(URI.create("/api/users/" + createdUser.getId()))
-                .body(createdUser);
+                .created(URI.create("/api/users/" + createdUser.sourceId()))
+                .body(response);
     }
 }

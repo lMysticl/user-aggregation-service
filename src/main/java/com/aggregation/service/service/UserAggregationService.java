@@ -1,10 +1,12 @@
 package com.aggregation.service.service;
 
+import com.aggregation.service.application.CreateUserCommand;
 import com.aggregation.service.config.properties.AggregationProperties;
+import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.exception.SourceUnavailableException;
 import com.aggregation.service.exception.UserNotFoundException;
-import com.aggregation.service.model.MongoUser;
-import com.aggregation.service.model.User;
+import com.aggregation.service.persistence.jpa.PostgresUserEntity;
+import com.aggregation.service.persistence.mongo.MongoUserDocument;
 import com.aggregation.service.repository.jpa.PostgresUserRepository;
 import com.aggregation.service.repository.mongo.MongoUserRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -48,16 +50,20 @@ public class UserAggregationService {
             key = "T(java.util.Arrays).asList(#username, #name)",
             sync = true
     )
-    public List<User> searchUsers(String username, String name) {
+    public List<AggregatedUser> searchUsers(String username, String name) {
         String normalizedUsername = normalize(username);
         String normalizedName = normalize(name);
 
         if (normalizedUsername != null) {
             return aggregate(
-                    () -> postgresUserRepository.findByUsernameContainingIgnoreCase(normalizedUsername),
+                    () -> postgresUserRepository
+                            .findByUsernameContainingIgnoreCase(normalizedUsername)
+                            .stream()
+                            .map(PostgresUserEntity::toDomain)
+                            .toList(),
                     () -> mongoUserRepository.findByUsernameContainingIgnoreCase(normalizedUsername)
                             .stream()
-                            .map(MongoUser::toUser)
+                            .map(MongoUserDocument::toDomain)
                             .toList()
             );
         }
@@ -68,42 +74,53 @@ public class UserAggregationService {
                             .findByNameContainingIgnoreCaseOrSurnameContainingIgnoreCase(
                                     normalizedName,
                                     normalizedName
-                            ),
+                            )
+                            .stream()
+                            .map(PostgresUserEntity::toDomain)
+                            .toList(),
                     () -> mongoUserRepository
                             .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase(
                                     normalizedName,
                                     normalizedName
                             )
                             .stream()
-                            .map(MongoUser::toUser)
+                            .map(MongoUserDocument::toDomain)
                             .toList()
             );
         }
 
         return aggregate(
-                postgresUserRepository::findAll,
+                () -> postgresUserRepository.findAll().stream()
+                        .map(PostgresUserEntity::toDomain)
+                        .toList(),
                 () -> mongoUserRepository.findAll().stream()
-                        .map(MongoUser::toUser)
+                        .map(MongoUserDocument::toDomain)
                         .toList()
         );
     }
 
     @CacheEvict(cacheNames = USER_SEARCH_CACHE, allEntries = true)
-    public User createUser(User user) {
-        return postgresUserRepository.save(user);
+    public AggregatedUser createUser(CreateUserCommand command) {
+        PostgresUserEntity entity = PostgresUserEntity.builder()
+                .username(command.username())
+                .name(command.firstName())
+                .surname(command.lastName())
+                .build();
+        return postgresUserRepository.save(entity).toDomain();
     }
 
-    public User getUser(String id) {
+    public AggregatedUser getUser(String id) {
         return postgresUserRepository.findById(id)
+                .map(PostgresUserEntity::toDomain)
                 .orElseThrow(() -> new UserNotFoundException(id));
     }
 
-    private List<User> aggregate(
-            Supplier<List<User>> postgresQuery,
-            Supplier<List<User>> mongoQuery) {
-        CompletableFuture<List<User>> postgresUsers =
+    private List<AggregatedUser> aggregate(
+            Supplier<List<AggregatedUser>> postgresQuery,
+            Supplier<List<AggregatedUser>> mongoQuery) {
+        CompletableFuture<List<AggregatedUser>> postgresUsers =
                 querySource("PostgreSQL", postgresQuery);
-        CompletableFuture<List<User>> mongoUsers =
+        CompletableFuture<List<AggregatedUser>> mongoUsers =
                 querySource("MongoDB", mongoQuery);
 
         try {
@@ -123,9 +140,9 @@ public class UserAggregationService {
         }
     }
 
-    private CompletableFuture<List<User>> querySource(
+    private CompletableFuture<List<AggregatedUser>> querySource(
             String source,
-            Supplier<List<User>> query) {
+            Supplier<List<AggregatedUser>> query) {
         try {
             return CompletableFuture
                     .supplyAsync(query, aggregationExecutor)
