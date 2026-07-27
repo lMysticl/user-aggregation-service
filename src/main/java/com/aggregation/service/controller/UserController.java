@@ -38,7 +38,8 @@ public class UserController {
         description = """
             Retrieves users from all configured data sources (PostgreSQL and MongoDB) and aggregates them.
             Supports optional filtering by username or name/surname.
-            If no filters are provided, returns all users from both databases.""",
+            If no filters are provided, returns up to 100 users from each database.
+            New clients should use /api/v2/users for stable pagination and source identity.""",
         tags = {"Users"}
     )
     @ApiResponses({

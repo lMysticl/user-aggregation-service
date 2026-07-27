@@ -80,8 +80,8 @@ class UserAggregationServiceTest {
     @Test
     void searchUsersAggregatesPortsInStableSourceOrder() {
         UserSearchCriteria criteria = new UserSearchCriteria(null, null);
-        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
-        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
+        when(postgresSource.search(criteria, 100)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria, 100)).thenReturn(List.of(mongoUser));
 
         List<AggregatedUser> result = userAggregationService.searchUsers(null, null);
 
@@ -96,8 +96,8 @@ class UserAggregationServiceTest {
     @Test
     void searchUsersUsesUsernameWhenBothFiltersArePresent() {
         UserSearchCriteria criteria = new UserSearchCriteria("user", null);
-        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
-        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
+        when(postgresSource.search(criteria, 100)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria, 100)).thenReturn(List.of(mongoUser));
 
         List<AggregatedUser> result =
                 userAggregationService.searchUsers(" user ", "ignored");
@@ -108,8 +108,8 @@ class UserAggregationServiceTest {
     @Test
     void searchUsersFindsNameAcrossBothSources() {
         UserSearchCriteria criteria = new UserSearchCriteria(null, "User");
-        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
-        when(mongoSource.search(criteria)).thenReturn(List.of());
+        when(postgresSource.search(criteria, 100)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria, 100)).thenReturn(List.of());
 
         List<AggregatedUser> result = userAggregationService.searchUsers(null, "User");
 
@@ -139,7 +139,7 @@ class UserAggregationServiceTest {
     @Test
     void searchUsersFailsWhenOneSourceIsUnavailable() {
         UserSearchCriteria criteria = new UserSearchCriteria(null, null);
-        when(postgresSource.search(criteria))
+        when(postgresSource.search(criteria, 100))
                 .thenThrow(new IllegalStateException("PostgreSQL unavailable"));
 
         assertThatThrownBy(() -> userAggregationService.searchUsers(null, null))
@@ -158,11 +158,11 @@ class UserAggregationServiceTest {
                 properties
         );
         UserSearchCriteria criteria = new UserSearchCriteria(null, null);
-        when(postgresSource.search(criteria)).thenAnswer(invocation -> {
+        when(postgresSource.search(criteria, 100)).thenAnswer(invocation -> {
             Thread.sleep(250);
             return List.of(postgresUser);
         });
-        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
+        when(mongoSource.search(criteria, 100)).thenReturn(List.of(mongoUser));
 
         assertThatThrownBy(() -> shortTimeoutService.searchUsers(null, null))
                 .isInstanceOf(SourceUnavailableException.class)
@@ -184,5 +184,69 @@ class UserAggregationServiceTest {
         assertThatThrownBy(() -> saturatedService.searchUsers(null, null))
                 .isInstanceOf(SourceUnavailableException.class)
                 .hasMessageContaining("PostgreSQL");
+    }
+
+    @Test
+    void paginatedSearchKeepsDuplicateUsernamesAndUsesStableGlobalOrder() {
+        UserSearchCriteria criteria = new UserSearchCriteria(null, null);
+        AggregatedUser postgresDuplicate = new AggregatedUser(
+                UserSource.POSTGRESQL,
+                "pg-duplicate",
+                "same-user",
+                "Postgres",
+                "User"
+        );
+        AggregatedUser mongoDuplicate = new AggregatedUser(
+                UserSource.MONGODB,
+                "mongo-duplicate",
+                "same-user",
+                "Mongo",
+                "User"
+        );
+        when(postgresSource.search(criteria, 3))
+                .thenReturn(List.of(postgresUser, postgresDuplicate));
+        when(mongoSource.search(criteria, 3))
+                .thenReturn(List.of(mongoUser, mongoDuplicate));
+
+        UserPage result = userAggregationService.searchUsers(null, null, 0, 2);
+
+        assertThat(result.items())
+                .extracting(AggregatedUser::source, AggregatedUser::sourceId)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                UserSource.POSTGRESQL,
+                                "pg-duplicate"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UserSource.MONGODB,
+                                "mongo-duplicate"
+                        )
+                );
+        assertThat(result.hasNext()).isTrue();
+    }
+
+    @Test
+    void paginatedSearchRejectsUnboundedPageArguments() {
+        assertThatThrownBy(
+                () -> userAggregationService.searchUsers(null, null, 101, 20)
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("page");
+        assertThatThrownBy(
+                () -> userAggregationService.searchUsers(null, null, 0, 101)
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("size");
+    }
+
+    @Test
+    void getUserUsesTheRequestedReadSource() {
+        when(mongoSource.findById(mongoUser.sourceId()))
+                .thenReturn(Optional.of(mongoUser));
+
+        assertThat(userAggregationService.getUser(
+                UserSource.MONGODB,
+                mongoUser.sourceId()
+        )).isEqualTo(mongoUser);
     }
 }
