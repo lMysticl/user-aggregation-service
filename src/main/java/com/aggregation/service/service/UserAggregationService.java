@@ -1,149 +1,164 @@
 package com.aggregation.service.service;
 
+import com.aggregation.service.config.properties.AggregationProperties;
+import com.aggregation.service.exception.SourceUnavailableException;
 import com.aggregation.service.model.MongoUser;
 import com.aggregation.service.model.User;
-import com.aggregation.service.repository.MongoUserRepository;
-import com.aggregation.service.repository.PostgresUserRepository;
-import lombok.RequiredArgsConstructor;
+import com.aggregation.service.repository.jpa.PostgresUserRepository;
+import com.aggregation.service.repository.mongo.MongoUserRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class UserAggregationService {
+    static final String USER_SEARCH_CACHE = "user-searches";
+
     private final PostgresUserRepository postgresUserRepository;
     private final MongoUserRepository mongoUserRepository;
+    private final Executor aggregationExecutor;
+    private final long queryTimeoutMillis;
 
-    public List<User> getAllUsers() {
-        log.debug("Fetching all users from all sources");
-        
-        CompletableFuture<List<User>> postgresUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<User> users = postgresUserRepository.findAll();
-                log.debug("Found {} users in PostgreSQL", users.size());
-                return users;
-            } catch (Exception e) {
-                log.error("Error fetching users from PostgreSQL", e);
-                return new ArrayList<>();
-            }
-        });
-
-        CompletableFuture<List<User>> mongoUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<MongoUser> users = mongoUserRepository.findAll();
-                log.debug("Found {} users in MongoDB", users.size());
-                return users.stream()
-                    .map(MongoUser::toUser)
-                    .collect(Collectors.toList());
-            } catch (Exception e) {
-                log.error("Error fetching users from MongoDB", e);
-                return new ArrayList<>();
-            }
-        });
-
-        List<User> allUsers = Stream.concat(
-            postgresUsers.join().stream(),
-            mongoUsers.join().stream()
-        ).collect(Collectors.toList());
-
-        log.debug("Total users found: {}", allUsers.size());
-        return allUsers;
+    public UserAggregationService(
+            PostgresUserRepository postgresUserRepository,
+            MongoUserRepository mongoUserRepository,
+            @Qualifier("aggregationExecutor") Executor aggregationExecutor,
+            AggregationProperties properties) {
+        this.postgresUserRepository = postgresUserRepository;
+        this.mongoUserRepository = mongoUserRepository;
+        this.aggregationExecutor = aggregationExecutor;
+        this.queryTimeoutMillis = properties.getQueryTimeout().toMillis();
     }
 
-    public List<User> searchByUsername(String username) {
-        log.debug("Searching users by username pattern: {}", username);
-        
-        CompletableFuture<List<User>> postgresUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<User> users = postgresUserRepository.findByUsernamePattern(username);
-                log.debug("Found {} users in PostgreSQL matching username: {}", users.size(), username);
-                return users;
-            } catch (Exception e) {
-                log.error("Error searching users by username in PostgreSQL", e);
-                return new ArrayList<>();
-            }
-        });
-
-        CompletableFuture<List<User>> mongoUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<MongoUser> users = mongoUserRepository.findByUsernamePattern(username);
-                log.debug("Found {} users in MongoDB matching username: {}", users.size(), username);
-                return users.stream()
-                    .map(MongoUser::toUser)
-                    .collect(Collectors.toList());
-            } catch (Exception e) {
-                log.error("Error searching users by username in MongoDB", e);
-                return new ArrayList<>();
-            }
-        });
-
-        List<User> matchingUsers = Stream.concat(
-            postgresUsers.join().stream(),
-            mongoUsers.join().stream()
-        ).collect(Collectors.toList());
-
-        log.debug("Total users found matching username {}: {}", username, matchingUsers.size());
-        return matchingUsers;
-    }
-
-    public List<User> searchByName(String name) {
-        log.debug("Searching users by name pattern: {}", name);
-        
-        CompletableFuture<List<User>> postgresUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<User> users = postgresUserRepository.findByNameOrSurnamePattern(name);
-                log.debug("Found {} users in PostgreSQL matching name: {}", users.size(), name);
-                return users;
-            } catch (Exception e) {
-                log.error("Error searching users by name in PostgreSQL", e);
-                return new ArrayList<>();
-            }
-        });
-
-        CompletableFuture<List<User>> mongoUsers = CompletableFuture.supplyAsync(() -> {
-            try {
-                List<MongoUser> users = mongoUserRepository.findByNameOrSurnamePattern(name);
-                log.debug("Found {} users in MongoDB matching name: {}", users.size(), name);
-                return users.stream()
-                    .map(MongoUser::toUser)
-                    .collect(Collectors.toList());
-            } catch (Exception e) {
-                log.error("Error searching users by name in MongoDB", e);
-                return new ArrayList<>();
-            }
-        });
-
-        List<User> matchingUsers = Stream.concat(
-            postgresUsers.join().stream(),
-            mongoUsers.join().stream()
-        ).collect(Collectors.toList());
-
-        log.debug("Total users found matching name {}: {}", name, matchingUsers.size());
-        return matchingUsers;
-    }
-
+    @Cacheable(
+            cacheNames = USER_SEARCH_CACHE,
+            key = "T(java.util.Arrays).asList(#username, #name)",
+            sync = true
+    )
     public List<User> searchUsers(String username, String name) {
-        List<User> result = new ArrayList<>();
+        String normalizedUsername = normalize(username);
+        String normalizedName = normalize(name);
 
-        if (username != null && !username.isEmpty()) {
-            result.addAll(searchByUsername(username));
-        } else if (name != null && !name.isEmpty()) {
-            result.addAll(searchByName(name));
-        } else {
-            result.addAll(getAllUsers());
+        if (normalizedUsername != null) {
+            return aggregate(
+                    () -> postgresUserRepository.findByUsernameContainingIgnoreCase(normalizedUsername),
+                    () -> mongoUserRepository.findByUsernameContainingIgnoreCase(normalizedUsername)
+                            .stream()
+                            .map(MongoUser::toUser)
+                            .toList()
+            );
         }
 
-        return result;
+        if (normalizedName != null) {
+            return aggregate(
+                    () -> postgresUserRepository
+                            .findByNameContainingIgnoreCaseOrSurnameContainingIgnoreCase(
+                                    normalizedName,
+                                    normalizedName
+                            ),
+                    () -> mongoUserRepository
+                            .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase(
+                                    normalizedName,
+                                    normalizedName
+                            )
+                            .stream()
+                            .map(MongoUser::toUser)
+                            .toList()
+            );
+        }
+
+        return aggregate(
+                postgresUserRepository::findAll,
+                () -> mongoUserRepository.findAll().stream()
+                        .map(MongoUser::toUser)
+                        .toList()
+        );
     }
 
+    @CacheEvict(cacheNames = USER_SEARCH_CACHE, allEntries = true)
     public User createUser(User user) {
         return postgresUserRepository.save(user);
+    }
+
+    private List<User> aggregate(
+            Supplier<List<User>> postgresQuery,
+            Supplier<List<User>> mongoQuery) {
+        CompletableFuture<List<User>> postgresUsers =
+                querySource("PostgreSQL", postgresQuery);
+        CompletableFuture<List<User>> mongoUsers =
+                querySource("MongoDB", mongoQuery);
+
+        try {
+            return Stream.concat(
+                            postgresUsers.join().stream(),
+                            mongoUsers.join().stream()
+                    )
+                    .toList();
+        } catch (CompletionException exception) {
+            postgresUsers.cancel(true);
+            mongoUsers.cancel(true);
+            Throwable cause = unwrap(exception);
+            if (cause instanceof SourceUnavailableException sourceUnavailableException) {
+                throw sourceUnavailableException;
+            }
+            throw exception;
+        }
+    }
+
+    private CompletableFuture<List<User>> querySource(
+            String source,
+            Supplier<List<User>> query) {
+        try {
+            return CompletableFuture
+                    .supplyAsync(query, aggregationExecutor)
+                    .orTimeout(queryTimeoutMillis, TimeUnit.MILLISECONDS)
+                    .handle((users, error) -> {
+                        if (error == null) {
+                            return List.copyOf(users);
+                        }
+
+                        Throwable cause = unwrap(error);
+                        log.error(
+                                "{} user query failed: {}",
+                                source,
+                                cause.getClass().getSimpleName()
+                        );
+                        throw new CompletionException(
+                                new SourceUnavailableException(source, cause)
+                        );
+                    });
+        } catch (RejectedExecutionException exception) {
+            log.error("{} user query rejected: executor saturated", source);
+            return CompletableFuture.failedFuture(
+                    new SourceUnavailableException(source, exception)
+            );
+        }
+    }
+
+    private Throwable unwrap(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof CompletionException && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private String normalize(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.strip();
     }
 }

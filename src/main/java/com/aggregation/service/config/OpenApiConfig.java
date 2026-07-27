@@ -16,21 +16,21 @@ public class OpenApiConfig {
     @Bean
     public OpenAPI userAggregationApi() {
         Server localServer = new Server()
-                .url("http://localhost:8080")
+                .url("http://127.0.0.1:8080")
                 .description("Local Development Server");
 
         Contact contact = new Contact()
                 .name("Project repository")
-                .url("https://github.com/lMysticl/Aggregation_Service");
+                .url("https://github.com/lMysticl/user-aggregation-service");
 
         License license = new License()
                 .name("All rights reserved")
-                .url("https://github.com/lMysticl/Aggregation_Service/blob/main/LICENSE");
+                .url("https://github.com/lMysticl/user-aggregation-service/blob/main/LICENSE");
 
         Info info = new Info()
                 .title("User Aggregation API")
                 .version("1.0.0")
-                .description("Service for aggregating user data from multiple databases (PostgreSQL and MongoDB)")
+                .description("REST API that aggregates PostgreSQL and MongoDB user data")
                 .contact(contact)
                 .license(license);
 
