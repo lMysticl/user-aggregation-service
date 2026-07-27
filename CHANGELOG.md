@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Paginated `/api/v2/users` contract with explicit source provenance
+- Ports and adapters for independent PostgreSQL and MongoDB persistence models
+- ArchUnit dependency rules and real PostgreSQL/MongoDB Testcontainers coverage
+- Driver-level timeouts and per-source query metrics
+- MIT License
+
+### Changed
+
+- Bounded v1 reads without changing the existing JSON response fields
+- Standard HTTP failures now preserve their `400`, `404`, `405`, and `415` statuses
+- User identities are now unambiguous by source and source-local ID
+
 ## 1.0.0 - 2026-07-28
 
 ### Added

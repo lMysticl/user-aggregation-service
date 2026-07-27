@@ -1,6 +1,7 @@
 package com.aggregation.service.application;
 
 import com.aggregation.service.application.port.UserReadSource;
+import com.aggregation.service.application.port.UserSourceMetrics;
 import com.aggregation.service.application.port.UserWriter;
 import com.aggregation.service.config.properties.AggregationProperties;
 import com.aggregation.service.domain.AggregatedUser;
@@ -22,6 +23,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 @Service
@@ -43,12 +45,14 @@ public class UserAggregationService {
     private final List<UserReadSource> readSources;
     private final Map<UserSource, UserReadSource> readSourceByType;
     private final UserWriter userWriter;
+    private final UserSourceMetrics sourceMetrics;
     private final Executor aggregationExecutor;
     private final long queryTimeoutMillis;
 
     public UserAggregationService(
             List<UserReadSource> readSources,
             UserWriter userWriter,
+            UserSourceMetrics sourceMetrics,
             @Qualifier("aggregationExecutor") Executor aggregationExecutor,
             AggregationProperties properties) {
         this.readSources = readSources.stream()
@@ -57,6 +61,7 @@ public class UserAggregationService {
         this.readSourceByType = indexReadSources(this.readSources);
         requireReadSource(UserSource.POSTGRESQL);
         this.userWriter = userWriter;
+        this.sourceMetrics = sourceMetrics;
         this.aggregationExecutor = aggregationExecutor;
         this.queryTimeoutMillis = properties.getQueryTimeout().toMillis();
     }
@@ -153,16 +158,21 @@ public class UserAggregationService {
     private CompletableFuture<List<AggregatedUser>> querySource(
             UserSource source,
             Supplier<List<AggregatedUser>> query) {
+        UserSourceMetrics.QueryTimer timer = sourceMetrics.start(source);
         try {
             return CompletableFuture
                     .supplyAsync(query, aggregationExecutor)
                     .orTimeout(queryTimeoutMillis, TimeUnit.MILLISECONDS)
                     .handle((users, error) -> {
                         if (error == null) {
+                            timer.stop(UserSourceMetrics.Outcome.SUCCESS);
                             return List.copyOf(users);
                         }
 
                         Throwable cause = unwrap(error);
+                        timer.stop(cause instanceof TimeoutException
+                                ? UserSourceMetrics.Outcome.TIMEOUT
+                                : UserSourceMetrics.Outcome.FAILURE);
                         log.error(
                                 "{} user query failed: {}",
                                 source.displayName(),
@@ -173,6 +183,7 @@ public class UserAggregationService {
                         );
                     });
         } catch (RejectedExecutionException exception) {
+            timer.stop(UserSourceMetrics.Outcome.REJECTED);
             log.error("{} user query rejected: executor saturated", source.displayName());
             return CompletableFuture.failedFuture(
                     new SourceUnavailableException(source.displayName(), exception)

@@ -13,6 +13,8 @@ This is a portfolio service with production-oriented failure, validation, migrat
 - Concurrent PostgreSQL and MongoDB aggregation on a dedicated bounded executor
 - A provenance-aware, paginated v2 API with deterministic cross-source ordering
 - Deterministic `503 Service Unavailable` responses when either source fails or times out
+- JDBC query, connection-pool, and MongoDB driver timeouts derived from bounded configuration
+- Per-source query duration metrics tagged by source and outcome
 - Caffeine query caching with write-triggered invalidation
 - Request validation and explicit `201 Created`, `400`, `409`, and `503` API contracts
 - Flyway-managed relational schema migrations
@@ -72,7 +74,8 @@ docker compose down --volumes
 | Dependency | Version | Notes |
 | --- | --- | --- |
 | JDK | 21 | The Maven compiler release and CI runtime |
-| MongoDB | 6 or newer | Required at `localhost:27017` by the integration tests |
+| Docker | Current Docker Engine | Runs the real PostgreSQL and MongoDB contract test |
+| MongoDB | 6 or newer | Required at `localhost:27017` by the lightweight integration tests |
 | Maven | Wrapper-provided | A separate Maven installation is not required |
 
 Start a disposable MongoDB for local tests:
@@ -94,6 +97,7 @@ PowerShell:
 ```
 
 GitHub Actions runs the same command on Java 21 with a MongoDB service and separately verifies that the Docker image builds.
+It also fails if the Testcontainers contract test against real PostgreSQL and MongoDB is skipped.
 
 Tagged releases publish the executable JAR, SHA-256 checksum, CycloneDX SBOM,
 and GitHub build-provenance attestation.
@@ -123,6 +127,7 @@ The default relational database is in-memory H2. Omit the `demo` profile to star
 | `AGGREGATION_PRIMARY_JDBC_PASSWORD` | empty | Relational password |
 | `AGGREGATION_MONGODB_URI` | `mongodb://localhost:27017/users` | MongoDB connection string |
 | `AGGREGATION_QUERY_TIMEOUT` | `2s` | Maximum wait for each source query |
+| `AGGREGATION_CONNECTION_TIMEOUT_MS` | `2000` | Maximum wait for a pooled JDBC connection |
 | `AGGREGATION_EXECUTOR_CORE_POOL_SIZE` | `4` | Core aggregation worker count |
 | `AGGREGATION_EXECUTOR_MAX_POOL_SIZE` | `8` | Maximum aggregation worker count |
 | `AGGREGATION_EXECUTOR_QUEUE_CAPACITY` | `100` | Bounded pending-query capacity |
@@ -189,6 +194,11 @@ HTTP adapters: /api/users and /api/v2/users
        JPA entity + Flyway    Mongo document
 ```
 
+The core dependency direction is enforced by ArchUnit. Application/domain code
+cannot depend on controllers, HTTP DTOs, or persistence adapters. CI additionally
+starts disposable PostgreSQL and MongoDB containers and verifies the real Flyway,
+JPA, MongoDB, and aggregation contract together.
+
 ## Operations
 
 | Concern | Entry point |
@@ -199,6 +209,8 @@ HTTP adapters: /api/users and /api/v2/users
 | Local image health | Docker health check against `/actuator/health` |
 
 Health details are not exposed to unauthenticated callers. Logs contain source failures and server-side correlation IDs, but API errors do not expose exception messages.
+After a source query, `/actuator/metrics/user.aggregation.source.query` exposes
+duration and count with bounded `source` and `outcome` tags.
 
 ## Current boundaries
 
@@ -213,7 +225,9 @@ See [SECURITY.md](SECURITY.md) for supported versions and private vulnerability 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests must pass Java tests, the real MongoDB integration tests, the package build, and the Docker image build.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests must pass Java tests, the
+real PostgreSQL and MongoDB Testcontainers contract, architecture rules, the
+package build, and the Docker image build.
 
 ## License
 

@@ -3,7 +3,8 @@
 ## Development requirements
 
 - JDK 21
-- Docker with MongoDB available on `localhost:27017`
+- Docker Engine for the real PostgreSQL and MongoDB contract test
+- MongoDB available on `localhost:27017` for the lightweight integration tests
 
 Run the full local quality gate before opening a pull request:
 
@@ -18,6 +19,7 @@ On Windows, use `.\mvnw.cmd` for Maven commands.
 
 - Keep REST paths and successful response fields backward compatible.
 - Add or update tests for validation, caching, failure handling, persistence, or ordering changes.
+- Preserve the ports-and-adapters dependency rules enforced by ArchUnit.
 - Keep database changes in a new Flyway migration; never rewrite an applied migration.
 - Do not commit credentials, `.env`, database files, logs, or generated build output.
 - Document externally visible changes in `CHANGELOG.md`.
