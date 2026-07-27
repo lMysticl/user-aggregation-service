@@ -12,7 +12,7 @@ All notable changes to this project are documented in this file.
 - Caffeine query caching and write-triggered invalidation
 - Bean Validation request contract and explicit HTTP error responses
 - Flyway relational schema migration
-- CodeQL, dependency updates, and Docker build verification
+- CodeQL, dependency updates, Docker build verification, SBOM, and attested releases
 
 ### Changed
 

@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mongodb:
+        image: mongo:6-jammy
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify tagged commit belongs to main
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+            echo "Tag ${GITHUB_REF_NAME} does not point to a commit in main" >&2
+            exit 1
+          fi
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Verify tag matches project version
+        id: version
+        shell: bash
+        run: |
+          project_version="$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          expected_tag="v${project_version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match project version ${project_version}" >&2
+            exit 1
+          fi
+          echo "value=${project_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and test
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+
+      - name: Create checksum
+        working-directory: target
+        run: sha256sum user-aggregation-service-${{ steps.version.outputs.value }}.jar > user-aggregation-service-${{ steps.version.outputs.value }}.jar.sha256
+
+      - name: Attest release artifacts
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            target/user-aggregation-service-${{ steps.version.outputs.value }}.jar
+            target/user-aggregation-service-${{ steps.version.outputs.value }}.jar.sha256
+            target/bom.json
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          target/user-aggregation-service-${{ steps.version.outputs.value }}.jar
+          target/user-aggregation-service-${{ steps.version.outputs.value }}.jar.sha256
+          target/bom.json
+          --verify-tag
+          --generate-notes
+          --title "User Aggregation Service ${{ steps.version.outputs.value }}"

@@ -14,7 +14,7 @@ This is a portfolio service with production-oriented failure, validation, migrat
 - Caffeine query caching with write-triggered invalidation
 - Request validation and explicit `201 Created`, `400`, `409`, and `503` API contracts
 - Flyway-managed relational schema migrations
-- OpenAPI, Actuator health/metrics, Docker Compose, CI, and CodeQL
+- OpenAPI, Actuator health/metrics, Docker Compose, CI, CodeQL, and attested releases
 
 ## Quick start with Docker
 
@@ -91,6 +91,9 @@ PowerShell:
 ```
 
 GitHub Actions runs the same command on Java 21 with a MongoDB service and separately verifies that the Docker image builds.
+
+Tagged releases publish the executable JAR, SHA-256 checksum, CycloneDX SBOM,
+and GitHub build-provenance attestation.
 
 ## Run from the JVM
 
