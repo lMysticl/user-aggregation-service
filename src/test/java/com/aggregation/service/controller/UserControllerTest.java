@@ -14,8 +14,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -71,6 +73,57 @@ class UserControllerTest {
                 ))
                 .andExpect(jsonPath("$.id").value("123e4567-e89b-12d3-a456-426614174000"))
                 .andExpect(jsonPath("$.username").value("johndoe"));
+    }
+
+    @Test
+    void createdUserLocationCanBeRetrieved() throws Exception {
+        User user = User.builder()
+                .id("123e4567-e89b-12d3-a456-426614174000")
+                .username("johndoe")
+                .name("John")
+                .surname("Doe")
+                .build();
+        when(userAggregationService.getUser("123e4567-e89b-12d3-a456-426614174000"))
+                .thenReturn(user);
+
+        mockMvc.perform(get("/api/users/123e4567-e89b-12d3-a456-426614174000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("123e4567-e89b-12d3-a456-426614174000"))
+                .andExpect(jsonPath("$.username").value("johndoe"));
+
+        verify(userAggregationService)
+                .getUser("123e4567-e89b-12d3-a456-426614174000");
+    }
+
+    @Test
+    void unknownRouteReturnsNotFoundInsteadOfInternalServerError() throws Exception {
+        mockMvc.perform(get("/api/unknown"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void malformedJsonReturnsBadRequestInsteadOfInternalServerError() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void unsupportedMethodReturnsMethodNotAllowedInsteadOfInternalServerError() throws Exception {
+        mockMvc.perform(patch("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void unsupportedContentTypeReturnsUnsupportedMediaTypeInsteadOfInternalServerError()
+            throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("username=johndoe"))
+                .andExpect(status().isUnsupportedMediaType());
     }
 
     @Test

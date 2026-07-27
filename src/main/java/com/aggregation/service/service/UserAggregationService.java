@@ -2,6 +2,7 @@ package com.aggregation.service.service;
 
 import com.aggregation.service.config.properties.AggregationProperties;
 import com.aggregation.service.exception.SourceUnavailableException;
+import com.aggregation.service.exception.UserNotFoundException;
 import com.aggregation.service.model.MongoUser;
 import com.aggregation.service.model.User;
 import com.aggregation.service.repository.jpa.PostgresUserRepository;
@@ -90,6 +91,11 @@ public class UserAggregationService {
     @CacheEvict(cacheNames = USER_SEARCH_CACHE, allEntries = true)
     public User createUser(User user) {
         return postgresUserRepository.save(user);
+    }
+
+    public User getUser(String id) {
+        return postgresUserRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(id));
     }
 
     private List<User> aggregate(

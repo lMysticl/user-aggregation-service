@@ -85,6 +85,29 @@ public class UserController {
         return ResponseEntity.ok(userAggregationService.searchUsers(username, name));
     }
 
+    @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+        summary = "Get a PostgreSQL user by ID",
+        description = "Retrieves a user created through this API by its relational-store ID.",
+        tags = {"Users"}
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "User found"),
+        @ApiResponse(
+            responseCode = "404",
+            description = "User not found",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_JSON_VALUE,
+                schema = @Schema(implementation = Error.class)
+            )
+        )
+    })
+    public ResponseEntity<User> getUser(
+            @Parameter(description = "Relational-store user ID", required = true)
+            @PathVariable String id) {
+        return ResponseEntity.ok(userAggregationService.getUser(id));
+    }
+
     @PostMapping(
         consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE
