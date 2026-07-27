@@ -113,7 +113,6 @@ class UserAggregationServiceTest {
     void searchUsersFailsWhenOneSourceIsUnavailable() {
         when(postgresUserRepository.findAll())
                 .thenThrow(new IllegalStateException("PostgreSQL unavailable"));
-        when(mongoUserRepository.findAll()).thenReturn(List.of(mongoUser));
 
         assertThatThrownBy(() -> userAggregationService.searchUsers(null, null))
                 .isInstanceOf(SourceUnavailableException.class)
