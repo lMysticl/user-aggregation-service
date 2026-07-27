@@ -1,10 +1,10 @@
 package com.aggregation.service.controller;
 
 import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.application.UserAggregationService;
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.domain.UserSource;
 import com.aggregation.service.exception.SourceUnavailableException;
-import com.aggregation.service.service.UserAggregationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,7 +1,7 @@
 package com.aggregation.service.integration;
 
-import com.aggregation.service.repository.jpa.PostgresUserRepository;
-import com.aggregation.service.repository.mongo.MongoUserRepository;
+import com.aggregation.service.adapter.persistence.mongo.MongoUserRepository;
+import com.aggregation.service.adapter.persistence.postgres.PostgresUserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

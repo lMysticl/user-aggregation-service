@@ -1,4 +1,4 @@
-package com.aggregation.service.persistence.mongo;
+package com.aggregation.service.adapter.persistence.mongo;
 
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.domain.UserSource;

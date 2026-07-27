@@ -1,12 +1,12 @@
 package com.aggregation.service.integration;
 
+import com.aggregation.service.adapter.persistence.mongo.MongoUserDocument;
+import com.aggregation.service.adapter.persistence.mongo.MongoUserRepository;
+import com.aggregation.service.adapter.persistence.postgres.PostgresUserEntity;
+import com.aggregation.service.adapter.persistence.postgres.PostgresUserRepository;
 import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.application.UserAggregationService;
 import com.aggregation.service.domain.AggregatedUser;
-import com.aggregation.service.persistence.jpa.PostgresUserEntity;
-import com.aggregation.service.persistence.mongo.MongoUserDocument;
-import com.aggregation.service.repository.jpa.PostgresUserRepository;
-import com.aggregation.service.repository.mongo.MongoUserRepository;
-import com.aggregation.service.service.UserAggregationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

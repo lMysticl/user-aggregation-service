@@ -1,13 +1,11 @@
-package com.aggregation.service.service;
+package com.aggregation.service.application;
 
+import com.aggregation.service.application.port.UserReadSource;
+import com.aggregation.service.application.port.UserWriter;
 import com.aggregation.service.config.properties.AggregationProperties;
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.domain.UserSource;
 import com.aggregation.service.exception.SourceUnavailableException;
-import com.aggregation.service.persistence.jpa.PostgresUserEntity;
-import com.aggregation.service.persistence.mongo.MongoUserDocument;
-import com.aggregation.service.repository.jpa.PostgresUserRepository;
-import com.aggregation.service.repository.mongo.MongoUserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -29,41 +28,48 @@ import static org.mockito.Mockito.when;
 class UserAggregationServiceTest {
 
     @Mock
-    private PostgresUserRepository postgresUserRepository;
+    private UserReadSource postgresSource;
 
     @Mock
-    private MongoUserRepository mongoUserRepository;
+    private UserReadSource mongoSource;
+
+    @Mock
+    private UserWriter userWriter;
 
     private ExecutorService executor;
     private UserAggregationService userAggregationService;
-    private PostgresUserEntity postgresUser;
-    private MongoUserDocument mongoUser;
+    private AggregatedUser postgresUser;
+    private AggregatedUser mongoUser;
 
     @BeforeEach
     void setUp() {
+        when(postgresSource.source()).thenReturn(UserSource.POSTGRESQL);
+        when(mongoSource.source()).thenReturn(UserSource.MONGODB);
+
         executor = Executors.newFixedThreadPool(2);
         AggregationProperties properties = new AggregationProperties();
         properties.setQueryTimeout(Duration.ofSeconds(1));
         userAggregationService = new UserAggregationService(
-                postgresUserRepository,
-                mongoUserRepository,
+                List.of(mongoSource, postgresSource),
+                userWriter,
                 executor,
                 properties
         );
 
-        postgresUser = PostgresUserEntity.builder()
-                .id("7d6d939c-74c2-45a1-924c-8ba608a7b1cf")
-                .username("user-1")
-                .name("User")
-                .surname("Userenko")
-                .build();
-
-        mongoUser = MongoUserDocument.builder()
-                .id("7d6d939c-74c2-45a1-924c-8ba608a7b3")
-                .username("user-2")
-                .firstName("Testuser")
-                .lastName("Testov")
-                .build();
+        postgresUser = new AggregatedUser(
+                UserSource.POSTGRESQL,
+                "7d6d939c-74c2-45a1-924c-8ba608a7b1cf",
+                "user-1",
+                "User",
+                "Userenko"
+        );
+        mongoUser = new AggregatedUser(
+                UserSource.MONGODB,
+                "7d6d939c-74c2-45a1-924c-8ba608a7b3",
+                "user-2",
+                "Testuser",
+                "Testov"
+        );
     }
 
     @AfterEach
@@ -72,9 +78,10 @@ class UserAggregationServiceTest {
     }
 
     @Test
-    void searchUsersAggregatesUsersInStableSourceOrder() {
-        when(postgresUserRepository.findAll()).thenReturn(List.of(postgresUser));
-        when(mongoUserRepository.findAll()).thenReturn(List.of(mongoUser));
+    void searchUsersAggregatesPortsInStableSourceOrder() {
+        UserSearchCriteria criteria = new UserSearchCriteria(null, null);
+        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
 
         List<AggregatedUser> result = userAggregationService.searchUsers(null, null);
 
@@ -84,34 +91,25 @@ class UserAggregationServiceTest {
         assertThat(result)
                 .extracting(AggregatedUser::source)
                 .containsExactly(UserSource.POSTGRESQL, UserSource.MONGODB);
-        assertThat(result)
-                .extracting(AggregatedUser::sourceId)
-                .containsExactly(
-                        "7d6d939c-74c2-45a1-924c-8ba608a7b1cf",
-                        "7d6d939c-74c2-45a1-924c-8ba608a7b3"
-                );
     }
 
     @Test
     void searchUsersUsesUsernameWhenBothFiltersArePresent() {
-        when(postgresUserRepository.findByUsernameContainingIgnoreCase("user"))
-                .thenReturn(List.of(postgresUser));
-        when(mongoUserRepository.findByUsernameContainingIgnoreCase("user"))
-                .thenReturn(List.of(mongoUser));
+        UserSearchCriteria criteria = new UserSearchCriteria("user", null);
+        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
 
-        List<AggregatedUser> result = userAggregationService.searchUsers(" user ", "ignored");
+        List<AggregatedUser> result =
+                userAggregationService.searchUsers(" user ", "ignored");
 
         assertThat(result).hasSize(2);
     }
 
     @Test
     void searchUsersFindsNameAcrossBothSources() {
-        when(postgresUserRepository
-                .findByNameContainingIgnoreCaseOrSurnameContainingIgnoreCase("User", "User"))
-                .thenReturn(List.of(postgresUser));
-        when(mongoUserRepository
-                .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase("User", "User"))
-                .thenReturn(List.of());
+        UserSearchCriteria criteria = new UserSearchCriteria(null, "User");
+        when(postgresSource.search(criteria)).thenReturn(List.of(postgresUser));
+        when(mongoSource.search(criteria)).thenReturn(List.of());
 
         List<AggregatedUser> result = userAggregationService.searchUsers(null, "User");
 
@@ -121,9 +119,29 @@ class UserAggregationServiceTest {
     }
 
     @Test
+    void getUserUsesThePostgresReadPort() {
+        when(postgresSource.findById(postgresUser.sourceId()))
+                .thenReturn(Optional.of(postgresUser));
+
+        assertThat(userAggregationService.getUser(postgresUser.sourceId()))
+                .isEqualTo(postgresUser);
+    }
+
+    @Test
+    void createUserUsesTheConfiguredWriter() {
+        CreateUserCommand command = new CreateUserCommand("user-1", "User", "Userenko");
+        when(userWriter.create(command)).thenReturn(postgresUser);
+
+        assertThat(userAggregationService.createUser(command))
+                .isEqualTo(postgresUser);
+    }
+
+    @Test
     void searchUsersFailsWhenOneSourceIsUnavailable() {
-        when(postgresUserRepository.findAll())
+        UserSearchCriteria criteria = new UserSearchCriteria(null, null);
+        when(postgresSource.search(criteria))
                 .thenThrow(new IllegalStateException("PostgreSQL unavailable"));
+        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
 
         assertThatThrownBy(() -> userAggregationService.searchUsers(null, null))
                 .isInstanceOf(SourceUnavailableException.class)
@@ -135,16 +153,17 @@ class UserAggregationServiceTest {
         AggregationProperties properties = new AggregationProperties();
         properties.setQueryTimeout(Duration.ofMillis(25));
         UserAggregationService shortTimeoutService = new UserAggregationService(
-                postgresUserRepository,
-                mongoUserRepository,
+                List.of(postgresSource, mongoSource),
+                userWriter,
                 executor,
                 properties
         );
-        when(postgresUserRepository.findAll()).thenAnswer(invocation -> {
+        UserSearchCriteria criteria = new UserSearchCriteria(null, null);
+        when(postgresSource.search(criteria)).thenAnswer(invocation -> {
             Thread.sleep(250);
             return List.of(postgresUser);
         });
-        when(mongoUserRepository.findAll()).thenReturn(List.of(mongoUser));
+        when(mongoSource.search(criteria)).thenReturn(List.of(mongoUser));
 
         assertThatThrownBy(() -> shortTimeoutService.searchUsers(null, null))
                 .isInstanceOf(SourceUnavailableException.class)
@@ -155,8 +174,8 @@ class UserAggregationServiceTest {
     void searchUsersFailsWhenAggregationExecutorIsSaturated() {
         AggregationProperties properties = new AggregationProperties();
         UserAggregationService saturatedService = new UserAggregationService(
-                postgresUserRepository,
-                mongoUserRepository,
+                List.of(postgresSource, mongoSource),
+                userWriter,
                 task -> {
                     throw new RejectedExecutionException("queue full");
                 },
