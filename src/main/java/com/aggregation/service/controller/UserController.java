@@ -1,11 +1,11 @@
 package com.aggregation.service.controller;
 
 import com.aggregation.service.application.CreateUserCommand;
+import com.aggregation.service.application.UserAggregationService;
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.dto.CreateUserRequest;
 import com.aggregation.service.dto.UserResponse;
 import com.aggregation.service.model.Error;
-import com.aggregation.service.service.UserAggregationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;

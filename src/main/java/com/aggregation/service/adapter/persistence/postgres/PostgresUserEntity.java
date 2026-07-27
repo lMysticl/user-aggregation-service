@@ -1,4 +1,4 @@
-package com.aggregation.service.persistence.jpa;
+package com.aggregation.service.adapter.persistence.postgres;
 
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.domain.UserSource;
