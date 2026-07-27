@@ -29,7 +29,7 @@ public class OpenApiConfig {
 
         Info info = new Info()
                 .title("User Aggregation API")
-                .version("1.0.0")
+                .version("1.1.0")
                 .description("REST API that aggregates PostgreSQL and MongoDB user data")
                 .contact(contact)
                 .license(license);

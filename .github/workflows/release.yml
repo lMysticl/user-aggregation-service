@@ -67,6 +67,15 @@ jobs:
       - name: Build and test
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
 
+      - name: Confirm real database contract ran
+        run: |
+          report="target/surefire-reports/TEST-com.aggregation.service.integration.RealDatabasesIntegrationTest.xml"
+          test -f "$report"
+          grep -q 'tests="1"' "$report"
+          grep -q 'errors="0"' "$report"
+          grep -q 'skipped="0"' "$report"
+          grep -q 'failures="0"' "$report"
+
       - name: Create checksum
         working-directory: target
         run: sha256sum user-aggregation-service-${{ steps.version.outputs.value }}.jar > user-aggregation-service-${{ steps.version.outputs.value }}.jar.sha256
