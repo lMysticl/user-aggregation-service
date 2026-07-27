@@ -1,10 +1,20 @@
 # User Aggregation Service
 
-[![CI](https://github.com/lMysticl/Aggregation_Service/actions/workflows/ci.yml/badge.svg)](https://github.com/lMysticl/Aggregation_Service/actions/workflows/ci.yml)
+[![CI](https://github.com/lMysticl/user-aggregation-service/actions/workflows/ci.yml/badge.svg)](https://github.com/lMysticl/user-aggregation-service/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/lMysticl/user-aggregation-service/actions/workflows/codeql.yml/badge.svg)](https://github.com/lMysticl/user-aggregation-service/actions/workflows/codeql.yml)
 
-A Java 21 and Spring Boot service that exposes one REST API over relational user data and MongoDB user documents. Reads are executed against both repositories and returned through a single `User` response model; new users are written to the relational store.
+A Java 21 and Spring Boot 3.5 service that exposes one REST API over PostgreSQL and MongoDB user data. Reads query both stores concurrently; writes go to PostgreSQL.
 
-This repository is a local portfolio/demo service. See [Current limitations](#current-limitations) before connecting it to persistent or valuable data.
+This is a portfolio service with production-oriented failure, validation, migration, caching, and observability patterns. It is not deployed as a production system.
+
+## What the project demonstrates
+
+- Concurrent PostgreSQL and MongoDB aggregation on a dedicated bounded executor
+- Deterministic `503 Service Unavailable` responses when either source fails or times out
+- Caffeine query caching with write-triggered invalidation
+- Request validation and explicit `201 Created`, `400`, `409`, and `503` API contracts
+- Flyway-managed relational schema migrations
+- OpenAPI, Actuator health/metrics, Docker Compose, CI, CodeQL, and attested releases
 
 ## Quick start with Docker
 
@@ -13,29 +23,27 @@ This repository is a local portfolio/demo service. See [Current limitations](#cu
 - Docker Engine with Docker Compose v2
 - Two local-only passwords for PostgreSQL and MongoDB
 
-Clone the repository and create an untracked local environment file:
-
 ```bash
-git clone https://github.com/lMysticl/Aggregation_Service.git
-cd Aggregation_Service
+git clone https://github.com/lMysticl/user-aggregation-service.git
+cd user-aggregation-service
 cp .env.example .env
 ```
 
-PowerShell equivalent:
+PowerShell:
 
 ```powershell
-git clone https://github.com/lMysticl/Aggregation_Service.git
-Set-Location Aggregation_Service
+git clone https://github.com/lMysticl/user-aggregation-service.git
+Set-Location user-aggregation-service
 Copy-Item .env.example .env
 ```
 
-Set the empty `POSTGRES_PASSWORD` and `MONGO_INITDB_ROOT_PASSWORD` values in `.env`, then build and start the stack:
+Set `POSTGRES_PASSWORD` and `MONGO_INITDB_ROOT_PASSWORD` in `.env`, then start the stack:
 
 ```bash
 docker compose up --build
 ```
 
-The Compose stack binds only to the local machine:
+The Compose stack binds its ports to `127.0.0.1`:
 
 | Interface | URL |
 | --- | --- |
@@ -44,13 +52,13 @@ The Compose stack binds only to the local machine:
 | OpenAPI document | http://127.0.0.1:8080/v3/api-docs |
 | Health | http://127.0.0.1:8080/actuator/health |
 
-Stop the stack without deleting database volumes:
+The `demo` profile adds sample records only when a store is empty. It never clears existing data.
 
 ```bash
 docker compose down
 ```
 
-To intentionally remove all local database volumes as well:
+To intentionally remove the local database volumes:
 
 ```bash
 docker compose down --volumes
@@ -58,21 +66,19 @@ docker compose down --volumes
 
 ## Build and test
 
-### Prerequisites
-
 | Dependency | Version | Notes |
 | --- | --- | --- |
-| JDK | 21 | The project compiles with Java release 21. |
-| MongoDB | 6.x | Required at `localhost:27017` by the integration test. |
-| Maven | Wrapper-provided 3.9.9 | A separate Maven installation is not required. |
+| JDK | 21 | The Maven compiler release and CI runtime |
+| MongoDB | 6 or newer | Required at `localhost:27017` by the integration tests |
+| Maven | Wrapper-provided | A separate Maven installation is not required |
 
-Start an unauthenticated, disposable MongoDB instance for local tests:
+Start a disposable MongoDB for local tests:
 
 ```bash
 docker run --rm --name aggregation-service-test-mongo -p 127.0.0.1:27017:27017 mongo:6-jammy
 ```
 
-In another terminal, run the complete clean quality gate:
+Run the complete quality gate:
 
 ```bash
 ./mvnw --batch-mode --no-transfer-progress clean verify
@@ -84,155 +90,107 @@ PowerShell:
 .\mvnw.cmd --batch-mode --no-transfer-progress clean verify
 ```
 
-Useful narrower commands:
+GitHub Actions runs the same command on Java 21 with a MongoDB service and separately verifies that the Docker image builds.
 
-```bash
-# Unit and integration tests
-./mvnw test
-
-# Clean package without running tests
-./mvnw clean package -DskipTests
-
-# Run only the repository-free unit tests
-./mvnw -Dtest=UserAggregationServiceTest test
-```
-
-On Windows, replace `./mvnw` with `.\mvnw.cmd`.
-
-GitHub Actions runs `clean verify` on JDK 21 and supplies its own MongoDB 6 service.
+Tagged releases publish the executable JAR, SHA-256 checksum, CycloneDX SBOM,
+and GitHub build-provenance attestation.
 
 ## Run from the JVM
 
-The default profile uses two in-memory H2 configurations and expects MongoDB at `mongodb://localhost:27017/users`. With MongoDB running:
+With MongoDB available locally:
 
 ```bash
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=demo
 ```
 
 PowerShell:
 
 ```powershell
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=demo"
 ```
 
-The application recreates demo users at startup. Do not point this profile at data that must be retained.
+The default relational database is in-memory H2. Omit the `demo` profile to start without sample records.
 
 ## Configuration
 
-### Default JVM profile
-
-All connection settings can be overridden through environment variables:
-
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AGGREGATION_PRIMARY_JDBC_STRATEGY` | `h2` | Primary JDBC driver strategy: `h2` or `postgres` |
-| `AGGREGATION_PRIMARY_JDBC_URL` | `jdbc:h2:mem:db1;DB_CLOSE_DELAY=-1` | Primary relational source |
-| `AGGREGATION_PRIMARY_JDBC_USERNAME` | `sa` | Primary source username |
-| `AGGREGATION_PRIMARY_JDBC_PASSWORD` | empty | Primary source password |
-| `AGGREGATION_SECONDARY_JDBC_STRATEGY` | `h2` | Secondary JDBC driver strategy: `h2` or `postgres` |
-| `AGGREGATION_SECONDARY_JDBC_URL` | `jdbc:h2:mem:db2;DB_CLOSE_DELAY=-1` | Secondary relational source |
-| `AGGREGATION_SECONDARY_JDBC_USERNAME` | `sa` | Secondary source username |
-| `AGGREGATION_SECONDARY_JDBC_PASSWORD` | empty | Secondary source password |
+| `AGGREGATION_PRIMARY_JDBC_URL` | `jdbc:h2:mem:users;DB_CLOSE_DELAY=-1` | Relational JDBC URL |
+| `AGGREGATION_PRIMARY_JDBC_USERNAME` | `sa` | Relational username |
+| `AGGREGATION_PRIMARY_JDBC_PASSWORD` | empty | Relational password |
 | `AGGREGATION_MONGODB_URI` | `mongodb://localhost:27017/users` | MongoDB connection string |
+| `AGGREGATION_QUERY_TIMEOUT` | `2s` | Maximum wait for each source query |
+| `AGGREGATION_EXECUTOR_CORE_POOL_SIZE` | `4` | Core aggregation worker count |
+| `AGGREGATION_EXECUTOR_MAX_POOL_SIZE` | `8` | Maximum aggregation worker count |
+| `AGGREGATION_EXECUTOR_QUEUE_CAPACITY` | `100` | Bounded pending-query capacity |
 
-The empty JDBC passwords apply only to the in-memory H2 demo defaults. When
-using PostgreSQL, set the matching strategy to `postgres` together with its
-JDBC URL and credentials.
-
-### Docker Compose profile
-
-Docker Compose reads `.env`; that file is ignored by Git. The tracked `.env.example` contains names and non-secret defaults, but intentionally leaves passwords empty.
-
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `POSTGRES_DB` | No | `users_db` | PostgreSQL database |
-| `POSTGRES_USER` | No | `aggregation_user` | PostgreSQL application role |
-| `POSTGRES_PASSWORD` | Yes | none | PostgreSQL password |
-| `MONGO_INITDB_ROOT_USERNAME` | No | `aggregation_admin` | Local MongoDB administrator |
-| `MONGO_INITDB_ROOT_PASSWORD` | Yes | none | Local MongoDB password; use a URI-safe value |
-| `MONGO_DATABASE` | No | `users_db` | MongoDB database |
-
-Compose converts these values into the `AGGREGATION_*` variables consumed by the `docker` Spring profile. Missing passwords stop configuration before containers are created.
-
-For production-like environments, inject secrets through the platform's secret manager rather than an `.env` file.
+Docker Compose reads database credentials from an ignored `.env` file. Use a platform secret manager outside local development.
 
 ## API
 
-| Method | Path | Behavior |
-| --- | --- | --- |
-| `GET` | `/api/users` | Return users aggregated from PostgreSQL and MongoDB |
-| `GET` | `/api/users?username={value}` | Case-insensitive partial username search |
-| `GET` | `/api/users?name={value}` | Case-insensitive partial name or surname search |
-| `POST` | `/api/users` | Create a user in the relational store |
+| Method | Path | Success | Behavior |
+| --- | --- | --- | --- |
+| `GET` | `/api/users` | `200` | Return users from PostgreSQL followed by MongoDB |
+| `GET` | `/api/users?username={value}` | `200` | Case-insensitive partial username search |
+| `GET` | `/api/users?name={value}` | `200` | Case-insensitive partial name or surname search |
+| `POST` | `/api/users` | `201` | Validate and create a PostgreSQL user |
 
-When both query parameters are present, `username` takes precedence. The service generates a new UUID for every `POST`, regardless of an `id` supplied by the client.
-
-Example:
+When both filters are supplied, `username` takes precedence. Repeated reads are cached for five minutes; a successful `POST` invalidates all search variants.
 
 ```bash
 curl "http://127.0.0.1:8080/api/users?username=user"
 
-curl -X POST "http://127.0.0.1:8080/api/users" \
+curl -i -X POST "http://127.0.0.1:8080/api/users" \
   -H "Content-Type: application/json" \
   -d '{"username":"johndoe","name":"John","surname":"Doe"}'
 ```
 
-The generated OpenAPI document is the authoritative interactive reference for request and response schemas.
+The service does not silently return partial data. If either source fails or exceeds the configured timeout, the request returns `503` with a correlation ID. Logs identify the source and exception type without copying exception messages that may contain credentials.
 
 ## Architecture
 
 ```text
 HTTP /api/users
        |
-UserController
+UserController --- validation and HTTP contract
        |
-UserAggregationService
+UserAggregationService --- Caffeine cache
+       |
+bounded aggregation executor
        |-------------------------|
 PostgresUserRepository     MongoUserRepository
        |                         |
-      JPA                  MongoDB documents
-       |                         |
-       +------ User model -------+
+JPA + Flyway                 MongoDB
 ```
 
-- Spring Data JPA manages the relational `users` table.
-- Spring Data MongoDB reads the MongoDB `users` collection.
-- Read operations query both repositories asynchronously and concatenate their results.
-- `DataSourceProperties` binds the ordered `data-sources.sources` configuration.
-- Actuator exposes health, info, and metrics endpoints.
+## Operations
 
-## Current limitations
+| Concern | Entry point |
+| --- | --- |
+| Liveness/readiness | `/actuator/health/liveness`, `/actuator/health/readiness` |
+| Metrics | `/actuator/metrics` |
+| API contract | `/v3/api-docs` |
+| Local image health | Docker health check against `/actuator/health` |
 
-- `DataInitializer` deletes and recreates demo users in both stores every time the application starts.
-- Hibernate schema management is set to `update`; there is no versioned migration tool.
+Health details are not exposed to unauthenticated callers. Logs contain source failures and server-side correlation IDs, but API errors do not expose exception messages.
+
+## Current boundaries
+
 - The HTTP API has no authentication or authorization.
-- Repository failures are currently logged and converted to an empty result for that source.
-- There is no production deployment, rollback procedure, backup policy, SLO, or alerting configuration in this repository.
+- MongoDB schema evolution is application-managed; Flyway covers only the relational schema.
+- This repository does not define production deployment, backups, SLOs, alerting, or disaster recovery.
+- Cached responses are local to one application instance.
 
-These constraints make the current configuration suitable for local evaluation, not production data.
+## Security
 
-## Troubleshooting
-
-| Symptom | Check | Resolution |
-| --- | --- | --- |
-| Compose reports a required variable is missing | `.env` password values | Copy `.env.example` to `.env` and set both passwords. |
-| Port 5432 or 27017 is already allocated | Existing local database or test container | Stop the conflicting process or change the host-side Compose port. |
-| Integration test cannot connect to MongoDB | `localhost:27017` | Start the disposable MongoDB command from [Build and test](#build-and-test). |
-| Maven compilation fails on a newer JDK | `java -version` and `JAVA_HOME` | Run the wrapper with JDK 21. |
-| Application starts with unexpected demo records | Startup logs from `DataInitializer` | This is current demo behavior; do not use valuable data. |
+See [SECURITY.md](SECURITY.md) for supported versions and private vulnerability reporting. Do not commit `.env`, credentials, database dumps, or generated `target/` content.
 
 ## Contributing
 
-Keep REST paths, JSON fields, ordering, and fallback behavior compatible unless a change is explicitly documented. Before opening a pull request, run:
-
-```bash
-./mvnw --batch-mode --no-transfer-progress clean verify
-```
-
-Do not commit `.env`, credentials, database dumps, or generated `target/` content.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests must pass Java tests, the real MongoDB integration tests, the package build, and the Docker image build.
 
 ## License
 
 Copyright 2024 Mystic. All rights reserved.
 
-This repository does not grant a general open-source license. See [LICENSE](LICENSE) and obtain explicit permission before copying, modifying, distributing, or otherwise using the code.
+This repository does not grant a general open-source license. See [LICENSE](LICENSE) before copying, modifying, or distributing the code.

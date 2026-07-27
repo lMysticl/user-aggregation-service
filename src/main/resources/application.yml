@@ -1,56 +1,33 @@
 spring:
   application:
-    name: Aggregation-Service
-  main:
-    allow-bean-definition-overriding: true
+    name: user-aggregation-service
+  datasource:
+    url: ${AGGREGATION_PRIMARY_JDBC_URL:jdbc:h2:mem:users;DB_CLOSE_DELAY=-1}
+    username: ${AGGREGATION_PRIMARY_JDBC_USERNAME:sa}
+    password: ${AGGREGATION_PRIMARY_JDBC_PASSWORD:}
+  data:
+    mongodb:
+      uri: ${AGGREGATION_MONGODB_URI:mongodb://localhost:27017/users}
   cache:
     type: caffeine
     caffeine:
       spec: maximumSize=500,expireAfterWrite=300s
+  flyway:
+    enabled: true
   jpa:
     hibernate:
-      ddl-auto: update
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
-    show-sql: true
+      ddl-auto: validate
     open-in-view: false
+    show-sql: false
 
-data-sources:
-  sources:
-    - name: data-base-1
-      type: jdbc
-      strategy: ${AGGREGATION_PRIMARY_JDBC_STRATEGY:h2}
-      url: ${AGGREGATION_PRIMARY_JDBC_URL:jdbc:h2:mem:db1;DB_CLOSE_DELAY=-1}
-      table: users
-      username: ${AGGREGATION_PRIMARY_JDBC_USERNAME:sa}
-      password: ${AGGREGATION_PRIMARY_JDBC_PASSWORD:}
-      primary: true
-      priority: 100
-      mapping:
-        id: id
-        username: username
-        name: first_name
-        surname: last_name
-        
-    - name: data-base-2
-      type: jdbc
-      strategy: ${AGGREGATION_SECONDARY_JDBC_STRATEGY:h2}
-      url: ${AGGREGATION_SECONDARY_JDBC_URL:jdbc:h2:mem:db2;DB_CLOSE_DELAY=-1}
-      table: users
-      username: ${AGGREGATION_SECONDARY_JDBC_USERNAME:sa}
-      password: ${AGGREGATION_SECONDARY_JDBC_PASSWORD:}
-      priority: 90
-      mapping:
-        id: id
-        username: username
-        name: first_name
-        surname: last_name
-
-    - name: mongodb-users
-      type: mongodb
-      url: ${AGGREGATION_MONGODB_URI:mongodb://localhost:27017/users}
-      priority: 80
+aggregation:
+  query-timeout: ${AGGREGATION_QUERY_TIMEOUT:2s}
+  demo-data:
+    enabled: false
+  executor:
+    core-pool-size: ${AGGREGATION_EXECUTOR_CORE_POOL_SIZE:4}
+    max-pool-size: ${AGGREGATION_EXECUTOR_MAX_POOL_SIZE:8}
+    queue-capacity: ${AGGREGATION_EXECUTOR_QUEUE_CAPACITY:100}
 
 management:
   endpoints:
@@ -60,8 +37,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
-      show-components: always
+      show-details: never
       probes:
         enabled: true
   health:
@@ -72,9 +48,6 @@ management:
 
 logging:
   level:
-    com.aggregation.service: DEBUG
+    com.aggregation.service: INFO
     org.springframework.data: INFO
     org.hibernate: INFO
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.data.jpa: DEBUG
-    org.springframework.boot.actuate: DEBUG

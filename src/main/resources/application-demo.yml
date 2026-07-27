@@ -1,0 +1,3 @@
+aggregation:
+  demo-data:
+    enabled: true

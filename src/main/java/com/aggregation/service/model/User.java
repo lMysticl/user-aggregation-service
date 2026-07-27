@@ -20,15 +20,15 @@ public class User {
     @Schema(description = "Unique identifier of the user", example = "123e4567-e89b-12d3-a456-426614174000")
     private String id;
 
-    @Schema(description = "Username for login", example = "johndoe", required = true)
-    @Column(nullable = false, unique = true)
+    @Schema(description = "Username for login", example = "johndoe", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Column(nullable = false, unique = true, length = 100)
     private String username;
 
-    @Schema(description = "User's first name", example = "John", required = true)
-    @Column(nullable = false)
+    @Schema(description = "User's first name", example = "John", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Column(nullable = false, length = 100)
     private String name;
 
-    @Schema(description = "User's last name", example = "Doe", required = true)
-    @Column(nullable = false)
+    @Schema(description = "User's last name", example = "Doe", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Column(nullable = false, length = 100)
     private String surname;
 }
