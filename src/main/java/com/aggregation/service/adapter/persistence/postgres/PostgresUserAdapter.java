@@ -7,6 +7,9 @@ import com.aggregation.service.application.port.UserWriter;
 import com.aggregation.service.domain.AggregatedUser;
 import com.aggregation.service.domain.UserSource;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -23,9 +26,13 @@ public class PostgresUserAdapter implements UserReadSource, UserWriter {
     }
 
     @Override
-    public List<AggregatedUser> search(UserSearchCriteria criteria) {
+    public List<AggregatedUser> search(UserSearchCriteria criteria, int limit) {
+        Pageable firstPage = firstPage(limit);
         if (criteria.username() != null) {
-            return repository.findByUsernameContainingIgnoreCase(criteria.username())
+            return repository.findByUsernameContainingIgnoreCase(
+                            criteria.username(),
+                            firstPage
+                    )
                     .stream()
                     .map(PostgresUserEntity::toDomain)
                     .toList();
@@ -34,15 +41,24 @@ public class PostgresUserAdapter implements UserReadSource, UserWriter {
             return repository
                     .findByNameContainingIgnoreCaseOrSurnameContainingIgnoreCase(
                             criteria.name(),
-                            criteria.name()
+                            criteria.name(),
+                            firstPage
                     )
                     .stream()
                     .map(PostgresUserEntity::toDomain)
                     .toList();
         }
-        return repository.findAll().stream()
+        return repository.findAll(firstPage).stream()
                 .map(PostgresUserEntity::toDomain)
                 .toList();
+    }
+
+    private Pageable firstPage(int limit) {
+        Sort sort = Sort.by(
+                Sort.Order.asc("username"),
+                Sort.Order.asc("id")
+        );
+        return PageRequest.of(0, limit, sort);
     }
 
     @Override

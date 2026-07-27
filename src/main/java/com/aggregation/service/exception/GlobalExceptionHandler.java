@@ -1,6 +1,7 @@
 package com.aggregation.service.exception;
 
 import com.aggregation.service.model.Error;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
@@ -55,12 +56,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Error> handleConstraintViolation(ConstraintViolationException ex) {
+        String details = ex.getConstraintViolations().stream()
+                .map(violation -> violation.getPropertyPath()
+                        + ": "
+                        + violation.getMessage())
+                .findFirst()
+                .orElse("Validation failed");
+        Error error = Error.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .message("Invalid request data")
+                .details(details)
+                .timestamp(ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                .build();
+
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Error> handleUserNotFound(UserNotFoundException ex) {
         Error error = Error.builder()
                 .status(HttpStatus.NOT_FOUND.value())
                 .message("User not found")
-                .details("No PostgreSQL user exists with ID " + ex.getUserId())
+                .details("No " + ex.getSource().displayName()
+                        + " user exists with ID " + ex.getUserId())
                 .timestamp(ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
                 .build();
 

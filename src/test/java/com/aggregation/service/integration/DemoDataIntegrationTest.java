@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,10 +32,16 @@ class DemoDataIntegrationTest {
 
     @Test
     void demoProfileSeedsEmptyStoresWithGeneratedRelationalId() {
-        assertThat(postgresUserRepository.findByUsernameContainingIgnoreCase("user-1"))
+        assertThat(postgresUserRepository.findByUsernameContainingIgnoreCase(
+                "user-1",
+                PageRequest.of(0, 1)
+        ))
                 .singleElement()
                 .satisfies(user -> assertThat(user.getId()).isNotBlank());
-        assertThat(mongoUserRepository.findByUsernameContainingIgnoreCase("user-2"))
+        assertThat(mongoUserRepository.findByUsernameContainingIgnoreCase(
+                "user-2",
+                PageRequest.of(0, 1)
+        ))
                 .hasSize(1);
     }
 }

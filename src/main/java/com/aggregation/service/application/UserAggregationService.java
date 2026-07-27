@@ -14,7 +14,9 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
@@ -26,9 +28,20 @@ import java.util.function.Supplier;
 @Slf4j
 public class UserAggregationService {
     static final String USER_SEARCH_CACHE = "user-searches";
+    static final int LEGACY_SOURCE_LIMIT = 100;
+    static final int MAX_PAGE = 100;
+    static final int MAX_PAGE_SIZE = 100;
+
+    private static final Comparator<AggregatedUser> USER_ORDER =
+            Comparator.comparing(
+                            AggregatedUser::username,
+                            Comparator.nullsLast(Comparator.naturalOrder())
+                    )
+                    .thenComparing(AggregatedUser::source)
+                    .thenComparing(AggregatedUser::sourceId);
 
     private final List<UserReadSource> readSources;
-    private final UserReadSource postgresReadSource;
+    private final Map<UserSource, UserReadSource> readSourceByType;
     private final UserWriter userWriter;
     private final Executor aggregationExecutor;
     private final long queryTimeoutMillis;
@@ -41,12 +54,8 @@ public class UserAggregationService {
         this.readSources = readSources.stream()
                 .sorted(Comparator.comparing(UserReadSource::source))
                 .toList();
-        this.postgresReadSource = this.readSources.stream()
-                .filter(source -> source.source() == UserSource.POSTGRESQL)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "PostgreSQL user read source is required"
-                ));
+        this.readSourceByType = indexReadSources(this.readSources);
+        requireReadSource(UserSource.POSTGRESQL);
         this.userWriter = userWriter;
         this.aggregationExecutor = aggregationExecutor;
         this.queryTimeoutMillis = properties.getQueryTimeout().toMillis();
@@ -64,7 +73,44 @@ public class UserAggregationService {
                 normalizedUsername,
                 normalizedUsername == null ? normalizedName : null
         );
-        return aggregate(criteria);
+        return aggregate(criteria, LEGACY_SOURCE_LIMIT);
+    }
+
+    @Cacheable(
+            cacheNames = USER_SEARCH_CACHE,
+            key = "T(java.util.Arrays).asList('v2', #username, #name, #page, #size)",
+            sync = true
+    )
+    public UserPage searchUsers(
+            String username,
+            String name,
+            int page,
+            int size) {
+        validatePage(page, size);
+        String normalizedUsername = normalize(username);
+        String normalizedName = normalize(name);
+        UserSearchCriteria criteria = new UserSearchCriteria(
+                normalizedUsername,
+                normalizedUsername == null ? normalizedName : null
+        );
+
+        int offset = Math.multiplyExact(page, size);
+        int fetchLimit = Math.addExact(
+                Math.multiplyExact(page + 1, size),
+                1
+        );
+        List<AggregatedUser> merged = aggregate(criteria, fetchLimit).stream()
+                .sorted(USER_ORDER)
+                .toList();
+        int fromIndex = Math.min(offset, merged.size());
+        int toIndex = Math.min(fromIndex + size, merged.size());
+
+        return new UserPage(
+                merged.subList(fromIndex, toIndex),
+                page,
+                size,
+                merged.size() > toIndex
+        );
     }
 
     @CacheEvict(cacheNames = USER_SEARCH_CACHE, allEntries = true)
@@ -73,15 +119,20 @@ public class UserAggregationService {
     }
 
     public AggregatedUser getUser(String id) {
-        return postgresReadSource.findById(id)
-                .orElseThrow(() -> new UserNotFoundException(id));
+        return getUser(UserSource.POSTGRESQL, id);
     }
 
-    private List<AggregatedUser> aggregate(UserSearchCriteria criteria) {
+    public AggregatedUser getUser(UserSource source, String id) {
+        return requireReadSource(source)
+                .findById(id)
+                .orElseThrow(() -> new UserNotFoundException(source, id));
+    }
+
+    private List<AggregatedUser> aggregate(UserSearchCriteria criteria, int limit) {
         List<CompletableFuture<List<AggregatedUser>>> queries = readSources.stream()
                 .map(source -> querySource(
                         source.source(),
-                        () -> source.search(criteria)
+                        () -> source.search(criteria, limit)
                 ))
                 .toList();
 
@@ -142,5 +193,42 @@ public class UserAggregationService {
             return null;
         }
         return value.strip();
+    }
+
+    private Map<UserSource, UserReadSource> indexReadSources(
+            List<UserReadSource> sources) {
+        EnumMap<UserSource, UserReadSource> indexed = new EnumMap<>(UserSource.class);
+        for (UserReadSource source : sources) {
+            UserReadSource previous = indexed.put(source.source(), source);
+            if (previous != null) {
+                throw new IllegalStateException(
+                        "Multiple user read sources configured for " + source.source()
+                );
+            }
+        }
+        return Map.copyOf(indexed);
+    }
+
+    private UserReadSource requireReadSource(UserSource source) {
+        UserReadSource readSource = readSourceByType.get(source);
+        if (readSource == null) {
+            throw new IllegalStateException(
+                    source.displayName() + " user read source is required"
+            );
+        }
+        return readSource;
+    }
+
+    private void validatePage(int page, int size) {
+        if (page < 0 || page > MAX_PAGE) {
+            throw new IllegalArgumentException(
+                    "page must be between 0 and " + MAX_PAGE
+            );
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "size must be between 1 and " + MAX_PAGE_SIZE
+            );
+        }
     }
 }

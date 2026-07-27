@@ -11,6 +11,7 @@ This is a portfolio service with production-oriented failure, validation, migrat
 ## What the project demonstrates
 
 - Concurrent PostgreSQL and MongoDB aggregation on a dedicated bounded executor
+- A provenance-aware, paginated v2 API with deterministic cross-source ordering
 - Deterministic `503 Service Unavailable` responses when either source fails or times out
 - Caffeine query caching with write-triggered invalidation
 - Request validation and explicit `201 Created`, `400`, `409`, and `503` API contracts
@@ -49,6 +50,7 @@ The Compose stack binds its ports to `127.0.0.1`:
 | Interface | URL |
 | --- | --- |
 | REST API | http://127.0.0.1:8080/api/users |
+| Paginated REST API | http://127.0.0.1:8080/api/v2/users |
 | Swagger UI | http://127.0.0.1:8080/swagger-ui/index.html |
 | OpenAPI document | http://127.0.0.1:8080/v3/api-docs |
 | Health | http://127.0.0.1:8080/actuator/health |
@@ -132,11 +134,34 @@ Docker Compose reads database credentials from an ignored `.env` file. Use a pla
 | Method | Path | Success | Behavior |
 | --- | --- | --- | --- |
 | `GET` | `/api/users` | `200` | Return users from PostgreSQL followed by MongoDB |
+| `GET` | `/api/users/{id}` | `200` | Return one PostgreSQL user by ID |
 | `GET` | `/api/users?username={value}` | `200` | Case-insensitive partial username search |
 | `GET` | `/api/users?name={value}` | `200` | Case-insensitive partial name or surname search |
 | `POST` | `/api/users` | `201` | Validate and create a PostgreSQL user |
+| `GET` | `/api/v2/users?page={page}&size={size}` | `200` | Return a stable, provenance-aware page |
+| `GET` | `/api/v2/users/{source}/{sourceId}` | `200` | Return one user by source-local identity |
+| `POST` | `/api/v2/users` | `201` | Create a PostgreSQL user and return its source identity |
 
-When both filters are supplied, `username` takes precedence. Repeated reads are cached for five minutes; a successful `POST` invalidates all search variants.
+When both filters are supplied, `username` takes precedence. Repeated reads are cached for five minutes; a successful `POST` invalidates all search variants. The compatibility API returns at most 100 records per source. New clients should use v2, where `page` is `0..100`, `size` is `1..100`, and records are ordered by username, source, then source-local ID.
+
+V2 keeps records from different stores distinct even when usernames match:
+
+```json
+{
+  "items": [
+    {
+      "source": "postgresql",
+      "sourceId": "123e4567-e89b-12d3-a456-426614174000",
+      "username": "johndoe",
+      "firstName": "John",
+      "lastName": "Doe"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "hasNext": false
+}
+```
 
 ```bash
 curl "http://127.0.0.1:8080/api/users?username=user"
@@ -151,17 +176,17 @@ The service does not silently return partial data. If either source fails or exc
 ## Architecture
 
 ```text
-HTTP /api/users
-       |
-UserController --- validation and HTTP contract
-       |
-UserAggregationService --- Caffeine cache
-       |
-bounded aggregation executor
-       |-------------------------|
-PostgresUserRepository     MongoUserRepository
-       |                         |
-JPA + Flyway                 MongoDB
+HTTP adapters: /api/users and /api/v2/users
+                       |
+       request/response DTO mapping
+                       |
+      UserAggregationService + cache
+                       |
+       UserReadSource / UserWriter ports
+               |                  |
+      PostgreSQL adapter      MongoDB adapter
+               |                  |
+       JPA entity + Flyway    Mongo document
 ```
 
 ## Operations

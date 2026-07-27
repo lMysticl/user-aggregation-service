@@ -10,7 +10,7 @@ import java.util.Optional;
 public interface UserReadSource {
     UserSource source();
 
-    List<AggregatedUser> search(UserSearchCriteria criteria);
+    List<AggregatedUser> search(UserSearchCriteria criteria, int limit);
 
     Optional<AggregatedUser> findById(String sourceId);
 }
