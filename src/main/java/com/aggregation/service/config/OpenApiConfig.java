@@ -24,7 +24,7 @@ public class OpenApiConfig {
                 .url("https://github.com/lMysticl/user-aggregation-service");
 
         License license = new License()
-                .name("All rights reserved")
+                .name("MIT License")
                 .url("https://github.com/lMysticl/user-aggregation-service/blob/main/LICENSE");
 
         Info info = new Info()

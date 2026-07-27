@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/lMysticl/user-aggregation-service/actions/workflows/ci.yml/badge.svg)](https://github.com/lMysticl/user-aggregation-service/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/lMysticl/user-aggregation-service/actions/workflows/codeql.yml/badge.svg)](https://github.com/lMysticl/user-aggregation-service/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Java 21 and Spring Boot 3.5 service that exposes one REST API over PostgreSQL and MongoDB user data. Reads query both stores concurrently; writes go to PostgreSQL.
 
@@ -191,6 +192,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests must pass Java tests, the 
 
 ## License
 
-Copyright 2024 Mystic. All rights reserved.
-
-This repository does not grant a general open-source license. See [LICENSE](LICENSE) before copying, modifying, or distributing the code.
+Licensed under the [MIT License](LICENSE). You may use, modify, and distribute
+the software as long as the copyright notice and license text are retained.
