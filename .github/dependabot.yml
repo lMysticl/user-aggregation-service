@@ -9,6 +9,13 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      - dependency-name: org.springframework.boot:spring-boot-starter-parent
+        update-types:
+          - version-update:semver-major
+      - dependency-name: org.springdoc:springdoc-openapi-starter-webmvc-ui
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
@@ -19,6 +26,10 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: docker
     directory: /
