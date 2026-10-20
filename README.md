@@ -18,6 +18,8 @@ This is a portfolio service with production-oriented failure, validation, migrat
 - Caffeine query caching with write-triggered invalidation
 - Request validation and explicit `201 Created`, `400`, `409`, and `503` API contracts
 - Flyway-managed relational schema migrations
+- Ports-and-adapters boundaries enforced by ArchUnit, recorded in [ADR 0001](docs/adr/0001-evolve-to-ports-and-adapters.md)
+- A Testcontainers contract test against real PostgreSQL and MongoDB in CI
 - OpenAPI, Actuator health/metrics, Docker Compose, CI, CodeQL, and attested releases
 
 ## Quick start with Docker
